@@ -1,0 +1,15 @@
+:root{
+  --workbench:#E7EAEE; --panel:#FFFFFF; --panel-2:#F2F5F8; --panel-3:#E9EDF2;
+  --ink:#16202B; --ink-soft:#62707E; --ink-faint:#93A0AD; --line:#D5DCE4;
+  --canvas:#182230; --grid:rgba(255,255,255,.055); --steel:#5FA8E0; --dim:#F4B740;
+  --amber:#EA8A1E; --amber-deep:#9C5A0C; --amber-soft:#FBEBD7;
+  --ok:#2E9E6B; --danger:#D1493F;
+  --sans:'IBM Plex Sans',system-ui,sans-serif; --mono:'IBM Plex Mono',ui-monospace,monospace; --disp:'Space Grotesk',var(--sans);
+  --r:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body,#app{height:100%}
+body{font-family:var(--sans);background:var(--workbench);color:var(--ink);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+button{font-family:inherit}
+input,select{font-family:inherit;color:var(--ink)}
+::selection{background:var(--amber-soft)}

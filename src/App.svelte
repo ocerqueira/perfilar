@@ -1,0 +1,193 @@
+<script>
+  import { get } from 'svelte/store';
+  import { editor, order, ctx, regions, regionId, freshEditor, catalogOverrides, catalogPresets } from './lib/stores.js';
+  import { PRESETS, clone } from './lib/presets.js';
+  import { compute, describe, nf } from './lib/engine.js';
+  import { priceFor } from './lib/pricing.js';
+  import { effectivePreset, DEFAULT_RESTRICTIONS } from './lib/catalog.js';
+  import { validateProfile } from './lib/validation.js';
+
+  import Sidebar      from './components/Sidebar.svelte';
+  import Blueprint    from './components/Blueprint.svelte';
+  import Planilha     from './components/Planilha.svelte';
+  import MateriaPrima from './components/MateriaPrima.svelte';
+  import Params       from './components/Params.svelte';
+  import Results      from './components/Results.svelte';
+  import Docs         from './components/Docs.svelte';
+  import Pricing      from './components/Pricing.svelte';
+  import Commission   from './components/Commission.svelte';
+  import Config       from './components/Config.svelte';
+
+  let doc = { open: false, kind: 'op' };
+  let showPricing    = false;
+  let showCommission = false;
+  let showConfig     = false;
+
+  $: C    = compute($editor.rows, $editor.params, $editor.conv, $editor.bd);
+  $: name = $editor.mode === 'cat' && PRESETS[$editor.key] ? PRESETS[$editor.key].name : 'Perfil livre';
+  $: sel  = $order.sel;
+
+  // Restrições do preset ativo (built-in com override, ou padrão)
+  $: restrictions = $editor.mode === 'cat'
+    ? (effectivePreset($editor.key, $catalogOverrides)?.restrictions ?? DEFAULT_RESTRICTIONS)
+    : DEFAULT_RESTRICTIONS;
+
+  // Validação em tempo real
+  $: violations = validateProfile($editor.rows, $editor.params, $editor.h0, restrictions);
+
+  function load(key) {
+    const p = effectivePreset(key, $catalogOverrides) ?? PRESETS[key];
+    if (!p) return;
+    $editor.mode = 'cat'; $editor.key = key; $editor.h0 = p.h0; $editor.rows = clone(p.rows);
+    $editor = $editor;
+    $order.sel = -1; $order = $order;
+  }
+
+  function loadCustom(preset) {
+    $editor.mode = 'cat'; $editor.key = preset.key;
+    $editor.h0   = preset.h0;
+    $editor.rows = clone(preset.rows);
+    $editor = $editor;
+    $order.sel = -1; $order = $order;
+  }
+
+  function snapshot() {
+    const e  = get(editor);
+    const Cc = compute(e.rows, e.params, e.conv, e.bd);
+    const customP = get(catalogPresets).find((p) => p.key === e.key);
+    const nm = (e.mode === 'cat' && PRESETS[e.key])
+      ? PRESETS[e.key].name
+      : customP?.name ?? 'Perfil livre';
+    const { custo: custoKg } = priceFor(get(regions), get(regionId), e.params.matName, e.params.revest);
+    const custoTotal = Cc.tot * custoKg;
+    const precoTotal = custoTotal * (1 + e.params.mg / 100);
+    return {
+      key: e.key, mode: e.mode, h0: e.h0, conv: e.conv, bd: e.bd,
+      rows: clone(e.rows), params: clone(e.params), C: Cc,
+      custoTotal, precoTotal,
+      total: precoTotal,
+      tipoProduto: 'perfil',
+      name: nm, label: `${nm} ${e.params.matName.toLowerCase()} ${nf(e.params.t, 2)}`,
+      code: describe(nm, e.params, Cc.des, e.rows, e.conv),
+    };
+  }
+
+  function addItem() {
+    const snap = snapshot();
+    if ($order.sel >= 0) $order.items[$order.sel] = snap;
+    else { $order.items.push(snap); $order.sel = $order.items.length - 1; }
+    $order = $order;
+  }
+  function newItem() { $order.sel = -1; $order = $order; editor.set(freshEditor()); }
+  function loadItem(i) {
+    const it = $order.items[i];
+    editor.set({ mode: it.mode, key: it.key, conv: it.conv, bd: it.bd, h0: it.h0, rows: clone(it.rows), params: clone(it.params) });
+    $order.sel = i; $order = $order;
+  }
+
+  function openOP()  { if (!$order.items.length) addItem(); doc = { open: true, kind: 'op' }; }
+  function openOrc() { if (!$order.items.length) addItem(); doc = { open: true, kind: 'orc' }; }
+</script>
+
+<div class="app">
+  <header class="bar">
+    <div class="brand"><b>Perfilar</b><span>ferro &amp; aço</span></div>
+    <div class="ctxf">
+      <input placeholder="Cliente" bind:value={$ctx.cliente} />
+      <input placeholder="Nº orçamento" bind:value={$ctx.orc} />
+    </div>
+    <div class="spacer"></div>
+    <button class="btn btn-ghost" on:click={() => (showConfig     = true)}>Configurações</button>
+    <button class="btn btn-ghost" on:click={() => (showPricing    = true)}>Preços</button>
+    <button class="btn btn-ghost" on:click={() => (showCommission = true)}>Comissão</button>
+    <button class="btn btn-ghost" on:click={openOrc}>Orçamento</button>
+    <button class="btn btn-amber" on:click={openOP}>Ordem de produção</button>
+  </header>
+
+  <Sidebar {load} {loadCustom} {loadItem} />
+
+  <main class="main">
+    <div class="editor">
+      <div class="card">
+        <div class="card-h">
+          <span class="t">Seção <span class="dim">· {name}</span></span>
+          {#if violations.length}
+            <span class="vbadge" title={violations.map((v) => v.msg).join('\n')}>
+              ⚠ {violations.length} {violations.length === 1 ? 'aviso' : 'avisos'}
+            </span>
+          {/if}
+          <div class="toggle">
+            <button class:on={$editor.conv === 'ext'} on:click={() => { $editor.conv = 'ext'; $editor = $editor; }}>Externa</button>
+            <button class:on={$editor.conv === 'int'} on:click={() => { $editor.conv = 'int'; $editor = $editor; }}>Interna</button>
+          </div>
+        </div>
+        <Blueprint rows={$editor.rows} h0={$editor.h0} t={$editor.params.t} conv={$editor.conv} />
+        {#if violations.length}
+          <div class="vlist">
+            {#each violations as v}
+              <div class="vrow" class:coll={v.type === 'collision'}>⚠ {v.msg}</div>
+            {/each}
+          </div>
+        {/if}
+      </div>
+      <Planilha />
+    </div>
+
+    <MateriaPrima />
+    <Params />
+    <Results {C} {name} />
+
+    <div class="foot">
+      <button class="btn btn-amber big" on:click={addItem}>
+        {sel >= 0 ? 'Salvar alterações do item' : 'Adicionar item ao pedido'}
+      </button>
+      <button class="btn btn-line big" on:click={newItem}>Novo item em branco</button>
+    </div>
+  </main>
+</div>
+
+{#if doc.open}
+  <Docs kind={doc.kind} on:close={() => (doc = { ...doc, open: false })} />
+{/if}
+{#if showPricing}
+  <Pricing on:close={() => (showPricing = false)} />
+{/if}
+{#if showCommission}
+  <Commission on:close={() => (showCommission = false)} />
+{/if}
+{#if showConfig}
+  <Config on:close={() => (showConfig = false)} />
+{/if}
+
+<style>
+  .app { display: grid; grid-template-columns: 282px 1fr; grid-template-rows: auto 1fr; height: 100vh; }
+  .bar { grid-column: 1 / 3; display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 56px; background: var(--ink); color: #fff; flex-wrap: wrap; }
+  .brand { display: flex; align-items: baseline; gap: 8px; }
+  .brand b { font-family: var(--disp); font-weight: 600; font-size: 18px; letter-spacing: .3px; }
+  .brand span { font-family: var(--mono); font-size: 11px; color: #9fb0c2; }
+  .ctxf { display: flex; gap: 8px; }
+  .ctxf input { height: 32px; background: #222e3b; border: 1px solid #2f3d4d; border-radius: 6px; color: #fff; padding: 0 10px; width: 130px; font-size: 13px; }
+  .spacer { flex: 1; }
+  .main { overflow-y: auto; padding: 16px; }
+  .editor { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
+  .card-h { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--line); gap: 8px; }
+  .t { font-weight: 600; font-size: 13.5px; flex: 1; } .dim { color: var(--ink-soft); font-weight: 400; }
+  .vbadge { font-family: var(--mono); font-size: 11px; background: #fff4e6; color: var(--amber-deep); border: 1px solid #f5d9b0; border-radius: 5px; padding: 2px 8px; cursor: help; white-space: nowrap; }
+  .vlist { background: #fff9f0; border-top: 1px solid #f5d9b0; padding: 8px 12px; display: flex; flex-direction: column; gap: 3px; }
+  .vrow { font-size: 11.5px; color: var(--amber-deep); }
+  .vrow.coll { color: var(--danger); font-weight: 500; }
+  .toggle { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; font-size: 11.5px; }
+  .toggle button { padding: 5px 10px; color: var(--ink-soft); background: none; border: 0; cursor: pointer; }
+  .toggle button.on { background: var(--ink); color: #fff; font-weight: 500; }
+  .foot { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .btn { height: 34px; padding: 0 12px; border-radius: 7px; font-weight: 500; font-size: 13px; border: 1px solid transparent; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; }
+  .btn.big { height: 38px; }
+  .btn-amber { background: var(--amber); color: #fff; } .btn-amber:hover { background: #d67d12; }
+  .btn-ghost { background: #222e3b; color: #dfe7ef; border-color: #33414f; } .btn-ghost:hover { background: #2a3543; }
+  .btn-line { background: var(--panel); color: var(--ink); border-color: var(--line); flex: 0 0 auto; } .btn-line:hover { background: var(--panel-2); }
+  .foot .btn-amber { flex: 1; min-width: 200px; }
+
+  @media (max-width: 980px) { .app { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr; } }
+  @media (max-width: 720px) { .editor { grid-template-columns: 1fr; } }
+</style>
