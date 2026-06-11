@@ -2,7 +2,7 @@
   import { get } from 'svelte/store';
   import { editor, order, ctx, regions, regionId, freshEditor, catalogOverrides, catalogPresets } from './lib/stores.js';
   import { PRESETS, clone } from './lib/presets.js';
-  import { compute, describe, nf } from './lib/engine.js';
+  import { compute, describe, nf, brl } from './lib/engine.js';
   import { priceFor } from './lib/pricing.js';
   import { effectivePreset, DEFAULT_RESTRICTIONS } from './lib/catalog.js';
   import { validateProfile } from './lib/validation.js';
@@ -17,15 +17,41 @@
   import Pricing      from './components/Pricing.svelte';
   import Commission   from './components/Commission.svelte';
   import Config       from './components/Config.svelte';
+  import CutPlan      from './components/CutPlan.svelte';
 
   let doc = { open: false, kind: 'op' };
   let showPricing    = false;
   let showCommission = false;
   let showConfig     = false;
+  let cutPlanGroup   = null;
 
   $: C    = compute($editor.rows, $editor.params, $editor.conv, $editor.bd);
   $: name = $editor.mode === 'cat' && PRESETS[$editor.key] ? PRESETS[$editor.key].name : 'Perfil livre';
   $: sel  = $order.sel;
+
+  $: ordTot  = $order.items.reduce((a, it) => a + it.C.tot, 0);
+  $: ordTotR = $order.items.reduce((a, it) => a + (it.total || 0), 0);
+
+  $: groups = (() => {
+    const map = new Map();
+    $order.items.forEach((it, i) => {
+      const p = it.params;
+      const key = p.forma === 'bobina'
+        ? `${p.matName}|${p.revest}|${p.t}|bobina|${p.coil}`
+        : `${p.matName}|${p.revest}|${p.t}|chapa|${p.chapaL}x${p.chapaC}`;
+      if (!map.has(key)) {
+        const dim = p.forma === 'bobina'
+          ? `bobina ${nf(p.coil, 0)} mm`
+          : `chapa ${nf(p.chapaL, 0)}×${nf(p.chapaC, 0)} mm`;
+        const rev = p.revest !== 'Sem revestimento' ? ` ${p.revest}` : '';
+        map.set(key, { label: `${p.matName}${rev} ${nf(p.t, 2)} mm — ${dim}`, entries: [], totKg: 0 });
+      }
+      const g = map.get(key);
+      g.entries.push({ it, i });
+      g.totKg += it.C.tot;
+    });
+    return [...map.values()];
+  })();
 
   // Restrições do preset ativo (built-in com override, ou padrão)
   $: restrictions = $editor.mode === 'cat'
@@ -79,6 +105,11 @@
     $order = $order;
   }
   function newItem() { $order.sel = -1; $order = $order; editor.set(freshEditor()); }
+  function remove(i) {
+    $order.items.splice(i, 1);
+    if ($order.sel >= i) $order.sel -= 1;
+    $order = $order;
+  }
   function loadItem(i) {
     const it = $order.items[i];
     editor.set({ mode: it.mode, key: it.key, conv: it.conv, bd: it.bd, h0: it.h0, rows: clone(it.rows), params: clone(it.params) });
@@ -104,7 +135,7 @@
     <button class="btn btn-amber" on:click={openOP}>Ordem de produção</button>
   </header>
 
-  <Sidebar {load} {loadCustom} {loadItem} />
+  <Sidebar {load} {loadCustom} />
 
   <main class="main">
     <div class="editor">
@@ -143,6 +174,37 @@
       </button>
       <button class="btn btn-line big" on:click={newItem}>Novo item em branco</button>
     </div>
+
+    {#if $order.items.length > 0}
+      <div class="tray-card">
+        <div class="tray-head">
+          <span class="t">Itens do pedido</span>
+          <span class="tray-tot">{nf(ordTot, 1)} kg · {brl(ordTotR)}</span>
+        </div>
+        <div class="tray-body">
+          {#each groups as g}
+            <div class="tray-group">
+              <div class="group-h">
+                <span class="mp-lbl">{g.label}</span>
+                <div class="group-right">
+                  <span class="group-kg">{nf(g.totKg, 1)} kg</span>
+                  <button class="btn btn-line btn-xs" on:click={() => (cutPlanGroup = g)}>Plano de corte</button>
+                </div>
+              </div>
+              {#each g.entries as { it, i }}
+                <div class="tray-item" class:on={i === sel}>
+                  <div class="nm" on:click={() => loadItem(i)} on:keydown={(e) => e.key === 'Enter' && loadItem(i)} role="button" tabindex="0">
+                    <b>{it.label}</b>
+                    <small>des {nf(it.C.des, 0)} · {it.params.Q} pç · {nf(it.C.tot, 1)} kg</small>
+                  </div>
+                  <button class="rm" on:click={() => remove(i)}>×</button>
+                </div>
+              {/each}
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
   </main>
 </div>
 
@@ -157,6 +219,9 @@
 {/if}
 {#if showConfig}
   <Config on:close={() => (showConfig = false)} />
+{/if}
+{#if cutPlanGroup}
+  <CutPlan group={cutPlanGroup} ctx={$ctx} on:close={() => (cutPlanGroup = null)} />
 {/if}
 
 <style>
@@ -187,6 +252,25 @@
   .btn-ghost { background: #222e3b; color: #dfe7ef; border-color: #33414f; } .btn-ghost:hover { background: #2a3543; }
   .btn-line { background: var(--panel); color: var(--ink); border-color: var(--line); flex: 0 0 auto; } .btn-line:hover { background: var(--panel-2); }
   .foot .btn-amber { flex: 1; min-width: 200px; }
+
+  .tray-card { margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
+  .tray-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .tray-head .t { font-weight: 600; font-size: 13.5px; }
+  .tray-tot { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
+  .tray-body { padding: 10px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .tray-group { display: flex; flex-direction: column; gap: 6px; }
+  .group-h { display: flex; align-items: center; justify-content: space-between; padding: 4px 0 2px; border-bottom: 1px solid var(--line); gap: 8px; }
+  .mp-lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .3px; color: var(--ink-faint); text-transform: uppercase; flex: 1; }
+  .group-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .group-kg { font-family: var(--mono); font-size: 11px; color: var(--ink-soft); }
+  .btn-xs { height: 26px; padding: 0 9px; font-size: 11.5px; border-radius: 5px; }
+  .tray-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); }
+  .tray-item.on { border-color: var(--amber); background: var(--amber-soft); }
+  .tray-item .nm { flex: 1; min-width: 0; cursor: pointer; }
+  .tray-item .nm b { font-weight: 500; font-size: 13px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tray-item .nm small { color: var(--ink-soft); font-family: var(--mono); font-size: 10.5px; }
+  .tray-item .rm { color: var(--ink-faint); font-size: 16px; padding: 2px 4px; border-radius: 4px; background: none; border: 0; cursor: pointer; flex-shrink: 0; }
+  .tray-item .rm:hover { color: var(--danger); }
 
   @media (max-width: 980px) { .app { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr; } }
   @media (max-width: 720px) { .editor { grid-template-columns: 1fr; } }

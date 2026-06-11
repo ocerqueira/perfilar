@@ -49,23 +49,32 @@ export function compute(rows, P, conv, bdMode) {
   const totLiq = pcLiq * P.Q;                      // peso líquido total
 
   // --- aproveitamento da matéria-prima ---
-  let larguraFatMM = des;     // largura "faturada" por peça (inclui sobra se cobrar)
-  let tiras = 0, sobra = 0, apr = 100, perSheet = 0, orient = '—';
+  const refilo = P.refilo || 0;
+  const espac  = P.espac  || 0;
+
+  let larguraFatMM = des;
+  let tiras = 0, sobra = 0, apr = 100, perSheet = 0, orient = '—', sheetCols = 0, sheetRows = 0;
 
   if (P.forma === 'bobina') {
-    tiras = des > 0 ? Math.floor(P.coil / des) : 0;
-    sobra = P.coil - tiras * des;                  // mm de largura que sobra
+    const coilUtil = P.coil - 2 * refilo;
+    tiras = des > 0 ? Math.floor((coilUtil + espac) / (des + espac)) : 0;
+    sobra = coilUtil - tiras * des - Math.max(0, tiras - 1) * espac;
     apr = P.coil > 0 ? (tiras * des) / P.coil * 100 : 0;
     larguraFatMM = P.cobrarSobra && tiras > 0 ? P.coil / tiras : des;
   } else { // chapa
-    const a1 = Math.floor(P.chapaL / des) * Math.floor(P.chapaC / P.C);
-    const a2 = Math.floor(P.chapaL / P.C) * Math.floor(P.chapaC / des);
+    const lUtil = P.chapaL - 2 * refilo;
+    const cUtil = P.chapaC - 2 * refilo;
+    const fit = (dim, slot) => (dim + espac) > 0 ? Math.floor((slot + espac) / (dim + espac)) : 0;
+    const cols1 = fit(des, lUtil),  rows1 = fit(P.C, cUtil);
+    const cols2 = fit(P.C, lUtil),  rows2 = fit(des, cUtil);
+    const a1 = cols1 * rows1, a2 = cols2 * rows2;
     perSheet = Math.max(a1, a2);
     orient = a1 >= a2 ? 'reta' : 'girada 90°';
+    sheetCols = a1 >= a2 ? cols1 : cols2;
+    sheetRows = a1 >= a2 ? rows1 : rows2;
     const areaBlank = des * P.C, areaSheet = P.chapaL * P.chapaC;
     apr = areaSheet > 0 && perSheet > 0 ? (perSheet * areaBlank) / areaSheet * 100 : 0;
-    sobra = areaSheet - perSheet * areaBlank;       // mm² de área que sobra
-    // largura equivalente faturada por peça (distribui a chapa inteira)
+    sobra = areaSheet - perSheet * areaBlank;
     larguraFatMM = P.cobrarSobra && perSheet > 0 ? (areaSheet / perSheet) / P.C : des;
   }
 
@@ -76,7 +85,7 @@ export function compute(rows, P, conv, bdMode) {
   return {
     sum, des, kgm, pcLiq, totLiq, pcFat, totFat,
     tiras, sobra, apr, perSheet, orient, larguraFatMM,
-    // aliases p/ compatibilidade
+    sheetCols, sheetRows, refilo, espac,
     pc: pcLiq, tot: P.cobrarSobra ? totFat : totLiq,
   };
 }

@@ -14,7 +14,7 @@ export function freshEditor(key = 'calha') {
   return {
     mode: 'cat', key, conv: 'ext', bd: 'auto', h0: p.h0,
     rows: clone(p.rows),
-    params: { matName: 'Galvanizado', dens: 7850, revest: 'Z275', t: 0.65, forma: 'bobina', coil: 1200, chapaL: 1200, chapaC: 3000, cobrarSobra: false, C: 3000, Q: 10, R: 2, K: 0.44, manBD: 1.7, mg: 35 },
+    params: { matName: 'Galvanizado', dens: 7850, revest: 'Z275', t: 0.65, forma: 'bobina', coil: 1200, chapaL: 1200, chapaC: 3000, cobrarSobra: false, C: 3000, Q: 10, R: 2, K: 0.44, manBD: 1.7, mg: 35, refilo: 0, espac: 0 },
   };
 }
 

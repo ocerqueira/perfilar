@@ -6,7 +6,8 @@
   $: P = $editor.params;
 
   function setMat(e) {
-    const m = MATERIALS.find((x) => x.name === e.target.value);
+    const m = $catalogMaterials.find((x) => x.name === e.target.value);
+    if (!m) return;
     P.matName = m.name; P.dens = m.dens; $editor = $editor;
   }
   function setGauge(e) {
@@ -62,6 +63,16 @@
         </div>
       </div>
     </div>
+
+    <div class="cut-cfg">
+      <div class="field"><label>Refilo / borda <span class="u">mm</span><Tooltip text="Margem inaproveitável nas bordas da bobina ou chapa (apara de corte)." /></label>
+        <input type="number" min="0" step="1" value={P.refilo ?? 0} on:input={num('refilo')} />
+      </div>
+      <div class="field"><label>Folga entre peças <span class="u">mm</span><Tooltip text="Espaço mínimo entre blanks adjacentes (largura do disco de corte)." /></label>
+        <input type="number" min="0" step="0.5" value={P.espac ?? 0} on:input={num('espac')} />
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -72,6 +83,7 @@
   .body { padding: 12px 14px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 12px; }
   .split { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+  .cut-cfg { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 12px; }
   .field label { display: block; font-size: 11.5px; color: var(--ink-soft); margin-bottom: 4px; }
   .field :global(input), .field :global(select) { width: 100%; height: 32px; border: 1px solid var(--line); border-radius: 6px; padding: 0 8px; background: var(--panel); font-size: 13px; }
   .field :global(input:focus), .field :global(select:focus) { outline: none; border-color: var(--amber); }
