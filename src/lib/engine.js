@@ -1,13 +1,34 @@
 // Motor de cálculo — perfis dobrados a frio + matéria-prima (bobina/chapa).
 
 export const MATERIALS = [
-  { name: 'Galvanizado', dens: 7850 },
-  { name: 'Galvalume',   dens: 7700 },
-  { name: 'Aço preto',   dens: 7850 },
-  { name: 'Alumínio',    dens: 2710 },
-  { name: 'Inox 304',    dens: 8000 },
-  { name: 'Cobre',       dens: 8960 },
+  { name: 'Galvanizado', dens: 7850, abbrev: 'GAL' },
+  { name: 'Galvalume',   dens: 7700, abbrev: 'GVL' },
+  { name: 'Aço preto',   dens: 7850, abbrev: 'CR'  },
+  { name: 'Alumínio',    dens: 2710, abbrev: 'ALU' },
+  { name: 'Inox 304',    dens: 8000, abbrev: 'INX' },
+  { name: 'Cobre',       dens: 8960, abbrev: 'CU'  },
 ];
+
+export const PRESET_ABBREV_DEFAULT = {
+  calha: 'CAL', u: 'PU', ue: 'PUE', cant: 'CANT', z: 'PZ', rufo: 'RUFO', ping: 'PING'
+};
+
+export const DESC_TEMPLATE_DEFAULT = '{tipo} {dims} · C{C} · t{t} · {mat} {rev}';
+
+function _matAbbrevFallback(name) {
+  const map = { 'GALVANIZADO': 'GAL', 'GALVALUME': 'GVL', 'AÇO PRETO': 'CR', 'ALUMÍNIO': 'ALU', 'INOX 304': 'INX', 'COBRE': 'CU' };
+  return map[name.toUpperCase()] ?? name.replace(/\s+/g, '').toUpperCase().slice(0, 3);
+}
+
+export function buildDescCfg(descCfg, materials) {
+  return {
+    template:     descCfg?.template     ?? DESC_TEMPLATE_DEFAULT,
+    presetAbbrev: descCfg?.presetAbbrev ?? PRESET_ABBREV_DEFAULT,
+    matAbbrev: Object.fromEntries(
+      (materials ?? []).map(m => [m.name, (m.abbrev || '').trim() || _matAbbrevFallback(m.name)])
+    ),
+  };
+}
 
 export const REVESTIMENTOS = ['Z275', 'Z350', 'AZ150 (Galvalume)', 'Pré-pintado', 'Sem revestimento'];
 
@@ -90,10 +111,24 @@ export function compute(rows, P, conv, bdMode) {
   };
 }
 
-export function describe(name, P, des, rows, conv) {
-  const lens = rows.map((r) => r[1]).join('/');
-  const rev = P.revest && P.revest !== 'Sem revestimento' ? ` ${P.revest}` : '';
-  return `${name.toLowerCase().replace(/ /g, '-')} · ${P.matName.toLowerCase()}${rev.toLowerCase()} ${nf(P.t, 2)} · des ${nf(des, 0)} · c ${nf(P.C, 0)} · ${lens} · [${conv}]`;
+export function describe(name, P, des, rows, conv, key = '', cfg = {}) {
+  const presetAbbrev = cfg.presetAbbrev ?? PRESET_ABBREV_DEFAULT;
+  const matAbbrev    = cfg.matAbbrev    ?? {};
+  const template     = cfg.template     ?? DESC_TEMPLATE_DEFAULT;
+  const tipo = presetAbbrev[key] ?? name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 5);
+  const dims = rows.map(r => r[1]).join('×');
+  const rev  = P.revest && P.revest !== 'Sem revestimento' ? P.revest : 'CR';
+  const mat  = matAbbrev[P.matName] || _matAbbrevFallback(P.matName);
+  return template
+    .replace(/\{tipo\}/g, tipo)
+    .replace(/\{dims\}/g, dims)
+    .replace(/\{C\}/g,    P.C)
+    .replace(/\{t\}/g,    nf(P.t, 2))
+    .replace(/\{mat\}/g,  mat)
+    .replace(/\{rev\}/g,  rev)
+    .replace(/\{des\}/g,  nf(des, 0))
+    .replace(/\{Q\}/g,    P.Q)
+    .trim().replace(/\s{2,}/g, ' ');
 }
 
 export const nf = (n, d) =>

@@ -1,8 +1,8 @@
 <script>
   import { get } from 'svelte/store';
-  import { editor, order, ctx, regions, regionId, freshEditor, catalogOverrides, catalogPresets } from './lib/stores.js';
+  import { editor, order, ctx, regions, regionId, freshEditor, catalogOverrides, catalogPresets, descConfig, catalogMaterials, companyInfo } from './lib/stores.js';
   import { PRESETS, clone } from './lib/presets.js';
-  import { compute, describe, nf, brl } from './lib/engine.js';
+  import { compute, describe, buildDescCfg, nf, brl } from './lib/engine.js';
   import { priceFor } from './lib/pricing.js';
   import { effectivePreset, DEFAULT_RESTRICTIONS } from './lib/catalog.js';
   import { validateProfile } from './lib/validation.js';
@@ -94,7 +94,7 @@
       total: precoTotal,
       tipoProduto: 'perfil',
       name: nm, label: `${nm} ${e.params.matName.toLowerCase()} ${nf(e.params.t, 2)}`,
-      code: describe(nm, e.params, Cc.des, e.rows, e.conv),
+      code: describe(nm, e.params, Cc.des, e.rows, e.conv, e.key, buildDescCfg(get(descConfig), get(catalogMaterials))),
     };
   }
 
@@ -126,6 +126,8 @@
     <div class="ctxf">
       <input placeholder="Cliente" bind:value={$ctx.cliente} />
       <input placeholder="Nº orçamento" bind:value={$ctx.orc} />
+      <input placeholder="Vendedor" bind:value={$ctx.vendedor} class="narrow" />
+      <input placeholder="Observação" bind:value={$ctx.obs} class="wide" />
     </div>
     <div class="spacer"></div>
     <button class="btn btn-ghost" on:click={() => (showConfig     = true)}>Configurações</button>
@@ -195,6 +197,7 @@
                 <div class="tray-item" class:on={i === sel}>
                   <div class="nm" on:click={() => loadItem(i)} on:keydown={(e) => e.key === 'Enter' && loadItem(i)} role="button" tabindex="0">
                     <b>{it.label}</b>
+                    <code class="sku">{it.code}</code>
                     <small>des {nf(it.C.des, 0)} · {it.params.Q} pç · {nf(it.C.tot, 1)} kg</small>
                   </div>
                   <button class="rm" on:click={() => remove(i)}>×</button>
@@ -232,6 +235,8 @@
   .brand span { font-family: var(--mono); font-size: 11px; color: #9fb0c2; }
   .ctxf { display: flex; gap: 8px; }
   .ctxf input { height: 32px; background: #222e3b; border: 1px solid #2f3d4d; border-radius: 6px; color: #fff; padding: 0 10px; width: 130px; font-size: 13px; }
+  .ctxf input.narrow { width: 90px; }
+  .ctxf input.wide   { width: 180px; }
   .spacer { flex: 1; }
   .main { overflow-y: auto; padding: 16px; }
   .editor { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 14px; }
@@ -268,6 +273,7 @@
   .tray-item.on { border-color: var(--amber); background: var(--amber-soft); }
   .tray-item .nm { flex: 1; min-width: 0; cursor: pointer; }
   .tray-item .nm b { font-weight: 500; font-size: 13px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tray-item .nm .sku  { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); background: var(--panel-2); border-radius: 3px; padding: 1px 5px; display: inline-block; margin: 2px 0; letter-spacing: .2px; }
   .tray-item .nm small { color: var(--ink-soft); font-family: var(--mono); font-size: 10.5px; }
   .tray-item .rm { color: var(--ink-faint); font-size: 16px; padding: 2px 4px; border-radius: 4px; background: none; border: 0; cursor: pointer; flex-shrink: 0; }
   .tray-item .rm:hover { color: var(--danger); }

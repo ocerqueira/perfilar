@@ -1,13 +1,14 @@
 <script>
-  import { editor } from '../lib/stores.js';
-  import { describe, nf, mpSummary } from '../lib/engine.js';
+  import { editor, descConfig, catalogMaterials } from '../lib/stores.js';
+  import { describe, buildDescCfg, nf, mpSummary } from '../lib/engine.js';
   import { toDXF, download } from '../lib/geometry.js';
   import Tooltip from './Tooltip.svelte';
 
   export let C;
   export let name;
   $: P = $editor.params;
-  $: code = describe(name, P, C.des, $editor.rows, $editor.conv);
+  $: cfg  = buildDescCfg($descConfig, $catalogMaterials);
+  $: code = describe(name, P, C.des, $editor.rows, $editor.conv, $editor.key, cfg);
   $: cobra = P.cobrarSobra && C.totFat > C.totLiq + 0.001;
 
   function copyCode() { if (navigator.clipboard) navigator.clipboard.writeText(code); }

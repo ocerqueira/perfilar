@@ -30,12 +30,47 @@ export function saveCommRule(rule) {
   try { localStorage.setItem(COMM_KEY, JSON.stringify(rule)); } catch { /* ignore */ }
 }
 
-export const editor          = writable(freshEditor());
-export const order           = writable({ items: [], sel: -1 });
-export const ctx             = writable({ cliente: '', orc: '' });
+// Dados da empresa (persistidos)
+const _CO_KEY = 'perf_company';
+const _CO_DEF = { nome: '', cnpj: '', tel: '', email: '', endereco: '', site: '' };
+function _loadCo() {
+  try { const v = JSON.parse(localStorage.getItem(_CO_KEY)); return v ? { ..._CO_DEF, ...v } : { ..._CO_DEF }; }
+  catch { return { ..._CO_DEF }; }
+}
+export const companyInfo = writable(_loadCo());
+companyInfo.subscribe(v => { try { localStorage.setItem(_CO_KEY, JSON.stringify(v)); } catch {} });
+
+export const editor = writable(freshEditor());
+export const order  = writable({ items: [], sel: -1 });
+export const ctx    = writable({ cliente: '', orc: '', vendedor: '', obs: '' });
 export const regions         = writable(loadRegions());
 export const regionId        = writable(loadRegions()[0].id);
 export const commissionRule  = writable(loadCommRule());
+
+// Configuração de impressão
+const _PR_KEY = 'perf_print';
+const _PR_DEF = { layout: 'one' }; // 'one' | 'two'
+function _loadPr() {
+  try { const v = JSON.parse(localStorage.getItem(_PR_KEY)); return v ? { ..._PR_DEF, ...v } : { ..._PR_DEF }; }
+  catch { return { ..._PR_DEF }; }
+}
+export const printConfig = writable(_loadPr());
+printConfig.subscribe(v => { try { localStorage.setItem(_PR_KEY, JSON.stringify(v)); } catch {} });
+
+// Configuração da descrição padronizada
+const _DESC_CFG_KEY = 'perf_descCfg';
+const _DESC_CFG_DEF = {
+  template:     '{tipo} {dims} · C{C} · t{t} · {mat} {rev}',
+  presetAbbrev: { calha: 'CAL', u: 'PU', ue: 'PUE', cant: 'CANT', z: 'PZ', rufo: 'RUFO', ping: 'PING' },
+};
+function _loadDescCfg() {
+  try {
+    const v = JSON.parse(localStorage.getItem(_DESC_CFG_KEY));
+    return v ? { ..._DESC_CFG_DEF, ...v, presetAbbrev: { ..._DESC_CFG_DEF.presetAbbrev, ...(v.presetAbbrev ?? {}) } } : { ..._DESC_CFG_DEF };
+  } catch { return { ..._DESC_CFG_DEF }; }
+}
+export const descConfig = writable(_loadDescCfg());
+descConfig.subscribe(v => { try { localStorage.setItem(_DESC_CFG_KEY, JSON.stringify(v)); } catch {} });
 
 // Catálogo configurável
 export const catalogMaterials = writable(loadMaterials());

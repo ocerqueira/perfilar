@@ -2,7 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import {
     catalogMaterials, catalogRevests, catalogGauges,
-    catalogPresets, catalogOverrides,
+    catalogPresets, catalogOverrides, descConfig, companyInfo, printConfig,
   } from '../lib/stores.js';
   import {
     saveMaterials, saveRevests, saveGauges,
@@ -11,11 +11,17 @@
     effectivePreset, DEFAULT_RESTRICTIONS, CAT_ORDER_DEFAULT,
   } from '../lib/catalog.js';
   import { PRESETS, ICONS, clone } from '../lib/presets.js';
+  import { PRESET_ABBREV_DEFAULT, DESC_TEMPLATE_DEFAULT, buildDescCfg } from '../lib/engine.js';
   import Blueprint from './Blueprint.svelte';
 
   const dispatch = createEventDispatcher();
 
-  let tab = 'mat'; // 'mat' | 'gau' | 'cat'
+  let tab = 'co'; // 'co' | 'mat' | 'gau' | 'cat' | 'desc'
+
+  // ── Tab 0: Empresa ───────────────────────────────────────────────────────────
+  let co = { ...$companyInfo };
+  function saveCo()  { $companyInfo = { ...co }; }
+  function resetCo() { co = { nome: '', cnpj: '', tel: '', email: '', endereco: '', site: '' }; $companyInfo = { ...co }; }
 
   // ── Tab 1: Materiais ─────────────────────────────────────────────────────────
   let mats  = $catalogMaterials.map((m) => ({ ...m }));
@@ -149,6 +155,30 @@
   }
   function rowChanged() { epDirty = true; epRows = epRows; }
 
+  // ── Tab 4: Descrição padronizada ────────────────────────────────────────────
+  const BUILTIN_KEYS = Object.keys(PRESETS);
+  const TOKENS = ['{tipo}', '{dims}', '{C}', '{t}', '{mat}', '{rev}', '{des}', '{Q}'];
+  const TOKEN_DESC = { '{tipo}': 'sigla do perfil', '{dims}': 'dimensões (abas)', '{C}': 'comprimento', '{t}': 'espessura', '{mat}': 'sigla do material', '{rev}': 'revestimento', '{des}': 'desenvolvimento', '{Q}': 'quantidade' };
+  const PREVIEW_VALS = { '{tipo}': 'PU', '{dims}': '75×200×75', '{C}': '3000', '{t}': '0,65', '{mat}': 'GAL', '{rev}': 'Z275', '{des}': '350', '{Q}': '10' };
+
+  let descTemplate   = $descConfig.template     ?? DESC_TEMPLATE_DEFAULT;
+  let descPresetAbbr = { ...(PRESET_ABBREV_DEFAULT), ...($descConfig.presetAbbrev ?? {}) };
+
+  $: descPreview = TOKENS.reduce((s, t) => s.replace(new RegExp(t.replace(/[{}]/g, '\\$&'), 'g'), PREVIEW_VALS[t]), descTemplate).trim().replace(/\s{2,}/g, ' ');
+
+  function insertToken(tok) {
+    descTemplate = (descTemplate ?? '') + tok;
+  }
+
+  function saveDesc() {
+    $descConfig = { template: descTemplate, presetAbbrev: { ...descPresetAbbr } };
+  }
+  function resetDesc() {
+    descTemplate   = DESC_TEMPLATE_DEFAULT;
+    descPresetAbbr = { ...PRESET_ABBREV_DEFAULT };
+    $descConfig    = { template: descTemplate, presetAbbrev: { ...descPresetAbbr } };
+  }
+
   // Funções de save global por aba
   function saveTab() {
     if (tab === 'mat') saveMat();
@@ -170,24 +200,88 @@
     <div class="mh">
       <b>Configurações</b>
       <div class="tabs">
-        <button class="tab" class:on={tab === 'mat'} on:click={() => (tab = 'mat')}>Materiais</button>
-        <button class="tab" class:on={tab === 'gau'} on:click={() => (tab = 'gau')}>Bitolas</button>
-        <button class="tab" class:on={tab === 'cat'} on:click={() => (tab = 'cat')}>Catálogo de Perfis</button>
+        <button class="tab" class:on={tab === 'co'}   on:click={() => (tab = 'co')}>Empresa</button>
+        <button class="tab" class:on={tab === 'mat'}  on:click={() => (tab = 'mat')}>Materiais</button>
+        <button class="tab" class:on={tab === 'gau'}  on:click={() => (tab = 'gau')}>Bitolas</button>
+        <button class="tab" class:on={tab === 'cat'}  on:click={() => (tab = 'cat')}>Catálogo de Perfis</button>
+        <button class="tab" class:on={tab === 'desc'} on:click={() => (tab = 'desc')}>Descrição</button>
       </div>
       <button class="btn ghost" on:click={close}>Fechar</button>
     </div>
 
+    <!-- ── Tab 0: Empresa ────────────────────────────────────────────────── -->
+    {#if tab === 'co'}
+      <div class="scroll">
+        <div class="sec-label">Identificação da empresa</div>
+        <div class="co-grid">
+          <div class="field co-wide">
+            <label>Nome / razão social</label>
+            <input class="inp" bind:value={co.nome} placeholder="Ex.: Metalúrgica Exemplo Ltda." />
+          </div>
+          <div class="field">
+            <label>CNPJ</label>
+            <input class="inp" bind:value={co.cnpj} placeholder="00.000.000/0001-00" />
+          </div>
+          <div class="field">
+            <label>Telefone / WhatsApp</label>
+            <input class="inp" bind:value={co.tel} placeholder="(11) 9 9999-9999" />
+          </div>
+          <div class="field">
+            <label>E-mail</label>
+            <input class="inp" bind:value={co.email} placeholder="contato@empresa.com.br" type="email" />
+          </div>
+          <div class="field">
+            <label>Site</label>
+            <input class="inp" bind:value={co.site} placeholder="www.empresa.com.br" />
+          </div>
+          <div class="field co-wide">
+            <label>Endereço</label>
+            <input class="inp" bind:value={co.endereco} placeholder="Rua das Chapas, 100 — Bairro — Cidade / UF" />
+          </div>
+        </div>
+        <p class="hint mt8">Essas informações aparecem no cabeçalho dos documentos (Plano de corte, Orçamento, Ordem de produção).</p>
+
+        <div class="sec-label mt20">Layout de impressão — Plano de corte</div>
+        <div class="print-layout-opts">
+          <label class="pl-opt" class:on={$printConfig.layout === 'one'}>
+            <input type="radio" name="pl" value="one" bind:group={$printConfig.layout} />
+            <div class="pl-preview pl-one">
+              <div class="pl-page"><div class="pl-svg"></div></div>
+            </div>
+            <span>Uma chapa por página</span>
+            <small>SVG escalado para caber na página inteira</small>
+          </label>
+          <label class="pl-opt" class:on={$printConfig.layout === 'two'}>
+            <input type="radio" name="pl" value="two" bind:group={$printConfig.layout} />
+            <div class="pl-preview pl-two">
+              <div class="pl-page">
+                <div class="pl-svg"></div>
+                <div class="pl-svg"></div>
+              </div>
+            </div>
+            <span>Duas chapas por página</span>
+            <small>Lado a lado — economiza papel</small>
+          </label>
+        </div>
+      </div>
+      <div class="mf">
+        <button class="btn line" on:click={resetCo}>Limpar empresa</button>
+        <div style="flex:1"></div>
+        <button class="btn amber" on:click={saveCo}>Salvar empresa</button>
+      </div>
+
     <!-- ── Tab 1: Materiais ───────────────────────────────────────────────── -->
-    {#if tab === 'mat'}
+    {:else if tab === 'mat'}
       <div class="scroll">
         <div class="sec-label">Materiais (liga do aço)</div>
         <table class="tbl">
-          <thead><tr><th>Nome</th><th class="r">Densidade <span class="u">kg/m³</span></th><th></th></tr></thead>
+          <thead><tr><th>Nome</th><th class="r">Densidade <span class="u">kg/m³</span></th><th>Sigla <span class="u">desc.</span></th><th></th></tr></thead>
           <tbody>
             {#each mats as m, i}
               <tr>
                 <td><input class="inp" bind:value={m.name} /></td>
                 <td><input class="inp num" type="number" step="10" bind:value={m.dens} /></td>
+                <td><input class="inp abbr" bind:value={m.abbrev} placeholder="GAL…" maxlength="5" /></td>
                 <td><button class="rm" on:click={() => removeMat(i)} title="Remover">×</button></td>
               </tr>
             {/each}
@@ -234,6 +328,46 @@
         <button class="btn line" on:click={resetTab}>Restaurar padrão</button>
         <div style="flex:1"></div>
         <button class="btn amber" on:click={saveTab}>Salvar</button>
+      </div>
+
+    <!-- ── Tab 4: Descrição ──────────────────────────────────────────────── -->
+    {:else if tab === 'desc'}
+      <div class="scroll">
+
+        <!-- Formato -->
+        <div class="sec-label">Formato da descrição padronizada</div>
+        <p class="hint">Clique nos tokens para inserir no formato. Cada token entre chaves é substituído pelo valor do item.</p>
+        <div class="token-bar">
+          {#each TOKENS as tok}
+            <button class="tok-btn" title={TOKEN_DESC[tok]} on:click={() => insertToken(tok)}>{tok}</button>
+          {/each}
+        </div>
+        <input class="inp full mt8" bind:value={descTemplate} placeholder="ex: PU 75×200 · C3000 · t0,65 · GAL Z275" />
+        <div class="preview-row">
+          <span class="preview-lbl">Prévia:</span>
+          <code class="preview-code">{descPreview}</code>
+        </div>
+
+        <!-- Siglas dos perfis padrão -->
+        <div class="sec-label mt20">Siglas dos perfis padrão</div>
+        <table class="tbl abbr-tbl">
+          <thead><tr><th>Perfil</th><th>Sigla</th></tr></thead>
+          <tbody>
+            {#each BUILTIN_KEYS as k}
+              <tr>
+                <td class="pname">{PRESETS[k].name}</td>
+                <td><input class="inp abbr" bind:value={descPresetAbbr[k]} maxlength="8" /></td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+        <p class="hint mt8">Perfis personalizados usam as iniciais do nome quando não há sigla definida aqui. As siglas dos materiais ficam na aba <b>Materiais</b>.</p>
+
+      </div>
+      <div class="mf">
+        <button class="btn line" on:click={resetDesc}>Restaurar padrão</button>
+        <div style="flex:1"></div>
+        <button class="btn amber" on:click={saveDesc}>Salvar</button>
       </div>
 
     <!-- ── Tab 3: Catálogo ────────────────────────────────────────────────── -->
@@ -480,4 +614,34 @@
   .restr-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
 
   .ed-actions { display: flex; gap: 8px; padding-top: 4px; border-top: 1px solid var(--line); align-items: center; }
+
+  /* ── Tab Empresa ─────────────────────────────────────────────────────── */
+  .co-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .co-wide { grid-column: 1 / -1; }
+
+  .print-layout-opts { display: flex; gap: 14px; flex-wrap: wrap; }
+  .pl-opt { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 12px 16px; border: 2px solid var(--line); border-radius: 8px; cursor: pointer; width: 160px; transition: border-color .15s; }
+  .pl-opt input { display: none; }
+  .pl-opt:hover { border-color: var(--ink-soft); }
+  .pl-opt.on { border-color: var(--amber); background: var(--amber-soft); }
+  .pl-opt span { font-size: 12.5px; font-weight: 500; text-align: center; }
+  .pl-opt small { font-size: 10.5px; color: var(--ink-soft); text-align: center; }
+  .pl-preview { width: 100px; height: 70px; display: flex; align-items: center; justify-content: center; background: var(--panel-2); border-radius: 4px; }
+  .pl-one .pl-page  { width: 70px; height: 60px; background: #fff; border: 1.5px solid #94a3b8; border-radius: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px; gap: 3px; }
+  .pl-two .pl-page  { width: 90px; height: 60px; background: #fff; border: 1.5px solid #94a3b8; border-radius: 2px; display: flex; flex-direction: row; align-items: center; justify-content: center; padding: 4px; gap: 4px; }
+  .pl-svg { background: #dbeafe; border: 1px solid #93c5fd; border-radius: 1px; }
+  .pl-one .pl-svg { width: 100%; flex: 1; }
+  .pl-two .pl-svg { width: 35px; height: 48px; }
+
+  /* ── Tab Descrição ───────────────────────────────────────────────────── */
+  .inp.abbr { width: 72px; font-family: var(--mono); font-size: 12px; text-transform: uppercase; }
+  .inp.full { width: 100%; font-family: var(--mono); font-size: 13px; }
+  .token-bar { display: flex; flex-wrap: wrap; gap: 5px; }
+  .tok-btn   { height: 26px; padding: 0 10px; border-radius: 5px; background: var(--panel-2); border: 1px solid var(--line); color: var(--ink-soft); font-family: var(--mono); font-size: 11.5px; cursor: pointer; }
+  .tok-btn:hover { background: var(--amber-soft); border-color: #f5d9b0; color: var(--amber-deep); }
+  .preview-row  { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .preview-lbl  { font-size: 11.5px; color: var(--ink-soft); white-space: nowrap; }
+  .preview-code { font-family: var(--mono); font-size: 13px; background: var(--ink); color: #e2f0ff; padding: 7px 12px; border-radius: 6px; flex: 1; overflow-x: auto; white-space: nowrap; }
+  .abbr-tbl { max-width: 340px; }
+  .abbr-tbl .pname { font-size: 13px; color: var(--ink); }
 </style>
