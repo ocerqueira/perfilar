@@ -1,9 +1,9 @@
 <script>
-  import { order, ctx, regions, regionId, commissionRule } from '../lib/stores.js';
-  import { nf, brl } from '../lib/engine.js';
-  import { priceFor } from '../lib/pricing.js';
-  import { commissionForItem, commissionForOrder, ruleLabel } from '../lib/commission.js';
-  import { dimensionedSVG } from '../lib/draw.js';
+  import { order, ctx, regions, regionId, commissionRule } from '../../lib/stores.js';
+  import { nf, brl } from '../../lib/engine.js';
+  import { priceFor } from '../../lib/pricing.js';
+  import { commissionForItem, commissionForOrder, ruleLabel } from '../../lib/commission.js';
+  import { dimensionedSVG } from '../../lib/draw.js';
   import { createEventDispatcher } from 'svelte';
 
   export let kind; // 'op' | 'orc'
@@ -130,7 +130,12 @@
                 <td class="r">{nf(r.it.C.des, 0)}</td>
                 <td class="r">{nf(r.it.params.C, 0)}</td>
                 <td class="r">{r.it.params.Q}</td>
-                <td class="r">{nf(r.it.C.tot, 1)}</td>
+                <td class="r">
+                  {nf(r.it.C.tot, 1)}
+                  {#if r.it.params.cobrarSobra && r.it.C.totFat > r.it.C.totLiq + 0.001}
+                    <br><span class="sob-note">líq. {nf(r.it.C.totLiq, 1)}</span>
+                  {/if}
+                </td>
                 <td class="r">{r.proprio.custo > 0 ? nf(r.proprio.custo, 2) : '—'}</td>
                 <td class="r">{r.proprio.custo > 0 ? nf(r.proprio.custo * (1 + r.it.params.mg / 100), 2) : '—'}</td>
                 <td class="r">{brl(r.precoTotal)}</td>
@@ -174,8 +179,8 @@
 </div>
 
 <script context="module">
-  import { dimensionedSVG as _dim } from '../lib/draw.js';
-  import { nf as _nf, mpSummary as _mp } from '../lib/engine.js';
+  import { dimensionedSVG as _dim } from '../../lib/draw.js';
+  import { nf as _nf, mpSummary as _mp } from '../../lib/engine.js';
   const _pc = { sheet: '#1f6fb2', dim: '#9C5A0C', text: '#16202B' };
   export function itemBlock(it, id) {
     const d = _dim(it.rows, it.h0, it.params.t, it.conv, _pc, { W: 340, H: 230, id });
@@ -183,6 +188,9 @@
       const last = i === it.rows.length - 1;
       return `<tr><td class="ix">${i + 1}</td><td>${r[0]}</td><td class="r mono">${r[1]}</td><td class="c mono">${last ? '—' : r[2] + '°'}</td><td class="c">${last ? '—' : (r[3] > 0 ? '↑' : '↓')}</td></tr>`;
     }).join('');
+    const sobDiv = (it.params.cobrarSobra && it.C.totFat > it.C.totLiq + 0.001)
+      ? `<div class="sob-bar">Sobra cobrada — peso líquido: <b>${_nf(it.C.totLiq, 1)} kg</b> · faturado: <b>${_nf(it.C.totFat, 1)} kg</b></div>`
+      : '';
     return `<div class="ig">
       <div><div class="croqui">${d.svg}</div><div class="cap">larg. ${d.w} × alt. ${d.h} mm · esp. ${_nf(it.params.t, 2)} mm · ${it.conv === 'int' ? 'internas' : 'externas'}</div></div>
       <div><table class="dt"><thead><tr><th>#</th><th>Aba</th><th class="r">mm</th><th class="c">dobra</th><th class="c">sent.</th></tr></thead><tbody>${rowsHtml}</tbody></table>
@@ -192,6 +200,7 @@
       <span>Desenv.: <b>${_nf(it.C.des, 0)} mm</b></span><span>Compr.: <b>${_nf(it.params.C, 0)} mm</b></span>
       <span>Qtd: <b>${it.params.Q}</b></span><span>Peso/pç: <b>${_nf(it.C.pc, 2)} kg</b></span><span>Peso total: <b>${_nf(it.C.tot, 1)} kg</b></span>
     </div>
+    ${sobDiv}
     <div class="mp">Matéria-prima: ${_mp(it.params, it.C)}</div>`;
   }
 </script>
@@ -237,6 +246,8 @@
   :global(.kv) { display: flex; gap: 18px; margin-top: 10px; font-size: 12px; flex-wrap: wrap; }
   :global(.kv b) { font-family: var(--mono); }
   :global(.mp) { font-size: 11px; color: var(--ink-soft); border-left: 2px solid var(--amber); padding-left: 8px; margin-top: 8px; }
+  :global(.sob-bar) { font-size: 11px; color: #9C5A0C; border-left: 2px solid #EA8A1E; padding-left: 8px; margin-top: 6px; }
+  .sob-note { font-size: 9.5px; color: var(--ink-faint); }
 
   .otab { width: 100%; border-collapse: collapse; font-size: 12px; }
   .otab th { color: var(--ink-faint); text-align: left; font-size: 10px; border-bottom: 1px solid #16202B; padding: 6px 4px; font-weight: 500; white-space: nowrap; }

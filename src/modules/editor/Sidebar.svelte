@@ -1,6 +1,6 @@
 <script>
-  import { editor, catalogPresets } from '../lib/stores.js';
-  import { PRESETS, CAT_ORDER, ICONS } from '../lib/presets.js';
+  import { editor, catalogPresets } from '../../lib/stores.js';
+  import { PRESETS, CAT_ORDER, ICONS } from '../../lib/presets.js';
 
   export let load;
   export let loadCustom;

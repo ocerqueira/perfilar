@@ -25,19 +25,41 @@
 
 ## 2. Stack e arquitetura
 
-- **Svelte 4 + Vite 5** — app reativo (planilha → desenho/peso/descrição via `$:`).
-- **Maker.js** — geometria paramétrica da seção; export **DXF** (com arcos de
-  dobra reais via `fillet`) e SVG.
-- **localStorage** — persistência da tabela de preços (e, no futuro, configs).
-- **Empacotamento desktop:** alvo **Tauri** (ou Electron) reaproveitando 100% da
-  lógica. Para uso offline, embutir as fontes (hoje vêm do Google Fonts).
+### Implantação
 
-Rodar:
+O Perfilar terá dois modos de entrega, com a mesma base de frontend:
+
+| Modo | Stack | Armazenamento | Prioridade |
+|---|---|---|---|
+| **SaaS web** | Svelte SPA + Python FastAPI + PostgreSQL | Servidor | Principal |
+| **Desktop offline** | Tauri + mesmo frontend | SQLite local | Secundário |
+
+Enquanto o backend não existir, o frontend usa **localStorage** como persistência temporária. A camada `src/lib/api.js` isola essa dependência — trocar por fetch real não exige mudar os componentes.
+
+### Frontend
+
+- **Svelte 4 + Vite 5** — app reativo (planilha → desenho/peso/descrição via `$:`).
+- **Maker.js** — geometria paramétrica da seção; export **DXF** e SVG.
+- **svelte-spa-router** ou Router.svelte simples (hash-based: `/#/editor`, `/#/orders`…).
+- Geometria/física (engine.js, geometry.js, draw.js, cutplan.js) fica **sempre no frontend** — nunca vai para o servidor.
+
+### Backend (futuro — Python FastAPI)
+
+- **Python 3.12 + FastAPI** — async, validação automática via Pydantic, OpenAPI gerado.
+- **SQLAlchemy 2 + Alembic** — ORM + migrations.
+- **PostgreSQL** (SaaS) / **SQLite** (Tauri) — mesmo código, troca de driver.
+- **Docker + docker-compose** — frontend + backend + banco em um único `docker-compose up`.
+- Auth: JWT (FastAPI-Users ou implementação própria), simples por ora.
+
+### Dev local
+
 ```bash
+# Frontend
 npm install
 npm run dev      # http://localhost:5173
-npm run build    # /dist
-npm run preview
+
+# Backend (quando existir)
+docker-compose up   # sobe frontend + API + banco
 ```
 
 ---
@@ -45,364 +67,623 @@ npm run preview
 ## 3. Modelo de domínio
 
 Fluxo: **Material → Matéria-prima → Produto → Blank/aproveitamento → Item do pedido → Saídas**,
-com **Preço** e **Comissão** entrando no item.
+com **Preço**, **Impostos** e **Comissão** entrando no item.
 
 | Entidade | Papel | Atributos principais |
 |---|---|---|
 | `Material` | liga do aço | nome, densidade (kg/m³) |
 | `Revestimento` | proteção | Z275, Z350, AZ150, pré-pintado, sem |
-| `Matéria-prima: Bobina` | tira contínua | largura (mm), bitola (mm), revestimento, material; pedida por comprimento |
-| `Matéria-prima: Chapa` | corte padrão em estoque | largura × comprimento (mm), bitola, revestimento, material |
+| `Matéria-prima: Bobina` | tira contínua | largura (mm), bitola (mm), revestimento, material |
+| `Matéria-prima: Chapa` | corte padrão | largura × comprimento (mm), bitola, revestimento, material |
 | `Produto: Perfil dobrado` | dobras | sequência de abas + dobras |
 | `Produto: Telha` | convencional / sanduíche | sanduíche = composto (2 chapas + núcleo) |
 | `Produto: Chapa cortada` | plana | recorte simples |
-| `Produto: Composto` | vários componentes | soma de componentes (ex.: sanduíche) |
+| `Produto: Composto` | vários componentes | soma de componentes |
 | `Blank` | retângulo plano consumido | largura = desenvolvimento, comprimento = peça |
-| `Preço` | tabela | **custo** + **preço de venda** (ambos por região e por material/revestimento), própria + concorrente |
+| `Preço` | tabela | custo + preço de venda por região × material × revestimento; própria + concorrente |
+| `TaxConfig` | perfil fiscal de venda | ICMS, PIS, COFINS, IPI, DIFAL por UF destino |
 | `Comissão` | regra de comissão | 3 bases × 3 modos + modificadores |
-| `Item do pedido` | produto + MP + preço + comissão | qtd, convenção, etc. |
-| `Saídas` | documentos | Orçamento, Ordem de produção, DXF/CAD |
+| `Cliente` | entidade comprador | razão social, CNPJ, IE, UF, contribuinte ICMS |
+| `Item do pedido` | produto + MP + preço + impostos + comissão | qtd, convenção, etc. |
+| `Saídas` | documentos | Orçamento, Ordem de produção, DXF/CAD, Plano de corte |
 
 **Regra de negócio — cobrar sobra:** o item tem um flag `cobrarSobra`. Define se o
-**peso faturado** é o líquido (só o produto) ou o bruto consumido da matéria-prima
-(incluindo o retalho da tira/chapa).
+**peso faturado** é o líquido (só o produto) ou o bruto consumido da matéria-prima.
 
-**Unidades** explícitas em todo campo: `R$`, `kg`, `mm`, `m`, `m²`, `°` (grau), `%`.
+**Unidades** explícitas em todo campo: `R$`, `kg`, `mm`, `m`, `m²`, `°`, `%`.
 
-**Padrão de precificação por tipo de produto:**
-
+**Padrão de precificação:**
 - Perfil, chapa, bobina, composto → **R$/kg**
-- Telha → **R$/m²** (com toggle pra m linear, se a operação preferir)
+- Telha → **R$/m²** (com toggle pra m linear)
 
 ---
 
-## 4. Estado atual (o que já está construído)
+## 4. Estado atual — o que está implementado
 
-App Svelte funcional, compilando. Implementado:
+### 4.1 Editor de perfis ✅
 
-- **Editor**
-  - Catálogo (7 perfis: calha, U, Ue, cantoneira, Z, rufo, pingadeira) + **modo livre**.
-  - Planilha de abas/dobras estilo Excel (Enter desce célula; cria linha no fim).
-  - **Blueprint cotado** em SVG, com setas, barra de escala em mm, e badge EXT/INT.
-  - Convenção de medida **externa / interna** (afeta cota e desenvolvimento).
-- **Parâmetros**
-  - Dobra: **Fator K** (raio + K) **ou desconto manual** por dobra de 90°.
-  - Peça: comprimento (mm), quantidade (pç), margem (%).
-- **Matéria-prima (fatia 1 — concluída)**
-  - Material (densidade) + **revestimento**.
-  - Espessura/bitola (lista de bitolas + “Outra…”).
-  - **Forma: bobina ou chapa**, com campos próprios (largura da bobina / chapa L×C).
-  - **Cobrar sobra (Sim/Não)** → peso líquido vs faturado.
-  - **Unidades explícitas** e **tooltips** “?” nos campos que confundem.
-- **Pedido com vários itens** (bandeja lateral, totais de peso e R$).
-- **Cálculo em tempo real:** desenvolvimento, peso líquido/faturado, aproveitamento
-  (bobina: tiras/sobra; chapa: peças por chapa + orientação reta/girada + sobra em m²).
-- **Descrição padronizada** (string canônica, copiável).
-- **Export DXF** por item (Maker.js, com arcos de dobra reais).
-- **Tabela de preço por região (PRÓPRIA, só custo R$/kg)** — editável, persistida em
-  localStorage, com seletor de região no orçamento. *Vai ser refeita na fatia 2.*
-- **Orçamento** (usa a região selecionada) e **Ordem de produção** (folha única ou
-  uma por item) com croqui cotado, ambos imprimíveis em PDF pelo navegador.
+- Catálogo com 7 perfis padrão (calha, U, Ue, cantoneira, Z, rufo, pingadeira) + modo livre
+- Planilha de abas/dobras estilo Excel (Enter desce; Tab avança coluna; cria linha no fim; mínimo 2 linhas)
+- Blueprint cotado em SVG com setas, barra de escala em mm, badge EXT/INT
+- Convenção de medida externa/interna (afeta cota e desenvolvimento)
+- Fator K (raio + K) ou desconto manual por dobra de 90°
+- Comprimento (mm), quantidade (pç), margem (%)
 
-> Observação: o encaixe na chapa hoje é o cálculo simples (quantos retângulos
-> `desenvolvimento × comprimento` cabem, testando as duas orientações). A
-> **visualização do nesting** de verdade é a fatia 3.
+### 4.2 Matéria-prima ✅
+
+- Material (6 opções: galvanizado, galvalume, aço preto, alumínio, inox 304, cobre) + revestimento
+- Espessura/bitola (lista configurável + campo "Outra…")
+- Forma: bobina (largura) ou chapa (L × C)
+- Cobrar sobra (Sim/Não) → peso líquido vs faturado
+- **Refilo** (borda inaproveitável, mm) e **folga entre peças** (espaço de corte, mm)
+- Cálculo em tempo real: desenvolvimento, peso líquido/faturado, aproveitamento, orientação reta/girada
+
+### 4.3 Preço dual e comissão ✅
+
+- Tabela de preço dual (custo + venda) por região × material × revestimento — própria + concorrente
+- Margem editável: editar custo/venda/margem% recalcula os outros dois
+- Motor de comissão composicional: 5 bases (venda, margem, peso, área, quantidade), 3 modos (%, fixo, fator), faixas escalonadas, override por tipo de produto
+- 3 presets rápidos de comissão + modo avançado
+
+### 4.4 Catálogo configurável ✅
+
+- Config → Empresa: nome, CNPJ, endereço, tel, email, site (usado no cabeçalho do plano de corte)
+- Config → Materiais: CRUD de materiais e revestimentos customizados
+- Config → Bitolas: CRUD de espessuras
+- Config → Catálogo de perfis: editor visual de presets customizados com preview de croqui, clonar, deletar, override de built-ins, restrições por preset (aba mín/máx, raio mín)
+- Config → Descrição: template de SKU e abreviações de material
+
+### 4.5 Validação de perfil ✅
+
+- Nível 1: restrições dimensionais (aba mínima, aba máxima, raio mínimo)
+- Nível 2: detecção de auto-interseção (segment intersection test)
+- Exibido como badge + lista de avisos no Blueprint
+
+### 4.6 Documentos ✅
+
+- Pedido com vários itens (bandeja lateral)
+- Orçamento com coluna concorrente e delta %
+- Ordem de produção (folha única ou uma por item, com croqui cotado)
+- Ambos imprimíveis em PDF pelo navegador
+
+### 4.7 Plano de Corte para Chapas ✅
+
+- Shell-packing 2D (guilhotina): ordena por área descrescente, encaixa em faixas horizontais
+- Visualização SVG: blanks coloridos (paleta 8 cores), linhas de corte, sobras
+- Agrupamento automático de chapas com layout idêntico
+- Tabela de cortes, aproveitamento %, sobra em m², quantidade de chapas
+- 2 layouts de impressão
+- Cabeçalho com dados da empresa
+
+### 4.8 Nesting visual inline ✅
+
+- Bobina: faixas horizontais com sobra em vermelho
+- Chapa: grid 2D com padrão de repetição + borda de refilo tracejada
+- Renderizado em tempo real em MateriaPrima.svelte
+
+### 4.9 Export ✅
+
+- DXF por item (Maker.js, com arcos de dobra reais)
+- Descrição SKU canônica (copiável)
 
 ---
 
-## 5. Lógica de cálculo (referência)
+## 5. Layout — SPA com sidebar
+
+Layout fixo em todas as páginas. O conteúdo muda, a shell não.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Perfilar         [Orçamento #0042 — Construtora XYZ]    [Empresa]  │  ← Header
+├────────────┬────────────────────────────────────────────────────────┤
+│            │                                                         │
+│  Editor    │                                                         │
+│  Pedidos   │                                                         │
+│  Clientes  │              ÁREA DE CONTEÚDO                          │
+│  Produtos  │                                                         │
+│  Materiais │              (módulo ativo)                             │
+│  Preços &  │                                                         │
+│  Impostos  │                                                         │
+│  Plano de  │                                                         │
+│  Corte     │                                                         │
+│  ───────   │                                                         │
+│  Config    │                                                         │
+│            │                                                         │
+└────────────┴────────────────────────────────────────────────────────┘
+```
+
+### Módulos / rotas
+
+| Rota | Módulo | Descrição |
+|---|---|---|
+| `/#/editor` | Editor | Planilha + blueprint + matéria-prima + resultados (tela principal atual) |
+| `/#/orders` | Pedidos | Lista de orçamentos/OPs; criar novo abre o editor vinculado |
+| `/#/clients` | Clientes | Cadastro de clientes (razão social, CNPJ, IE, UF, região) |
+| `/#/products` | Produtos | Catálogo de perfis (presets padrão + custom + restrições) |
+| `/#/materials` | Matérias-primas | Materiais, revestimentos, bitolas, bobinas/chapas em estoque |
+| `/#/pricing` | Preços & Impostos | Tabela de preços por região + TaxConfig por UF |
+| `/#/cutplan` | Plano de Corte | Nesting visual para chapas, impressão |
+| `/#/settings` | Configurações | Empresa, template de descrição, (futuramente: usuários) |
+
+### Shell (App.svelte)
+
+- **Header:** logo Perfilar, contexto do pedido ativo (número + cliente), botão empresa, ícone de ajuda.
+- **Sidebar:** ícone + label por módulo, grupo separado para Config no rodapé. Estado ativo destacado.
+- **Content area:** `<RouterView />` — cada módulo renderiza sua própria Page.svelte.
+
+---
+
+## 6. Estrutura de arquivos — estado atual e reorganização planejada
+
+### 6.1 Estado atual (monolítico)
+
+```
+src/
+  lib/
+    engine.js      cálculo: desenvolvimento, peso líq/fat, aproveitamento, SKU
+    geometry.js    Maker.js: buildModel, toDXF, toSVGString, download
+    draw.js        renderizador SVG cotado
+    presets.js     7 perfis padrão (PRESETS, CAT_ORDER, ICONS)
+    pricing.js     tabela de preço dual v2 por região (localStorage)
+    commission.js  engine composicional de comissão
+    catalog.js     catálogo configurável (materiais, revestimentos, bitolas, presets, overrides)
+    validation.js  restrições dimensionais + detecção de auto-interseção
+    cutplan.js     shell-packing 2D (guilhotina, múltiplas chapas)
+    stores.js      todos os stores do app (editor, order, ctx, regions, catalog*, companyInfo…)
+  components/
+    Sidebar.svelte        catálogo + bandeja do pedido
+    Blueprint.svelte      desenho cotado
+    Planilha.svelte       abas e dobras
+    MateriaPrima.svelte   forma bobina/chapa, revestimento, refilo, folga
+    Params.svelte         dobra (K/manual) + peça (compr., qtd, margem)
+    Results.svelte        desenvolvimento, peso, corte, descrição, DXF
+    Docs.svelte           orçamento + OP (imprimível)
+    Pricing.svelte        tabela de preço por região (modal)
+    Commission.svelte     regra de comissão (modal)
+    Config.svelte         5 abas: empresa, materiais, bitolas, catálogo, descrição
+    CutPlan.svelte        plano de corte com nesting visual
+    Nesting.svelte        visualização inline de aproveitamento
+    Tooltip.svelte        "?" reutilizável
+  App.svelte              layout, barra superior, wiring (monolítico)
+  app.css                 design tokens + base
+```
+
+### 6.2 Reorganização planejada (por módulos — próxima etapa)
+
+A refatoração é puramente de organização de pastas. Sem mudança de comportamento.
+
+```
+src/
+  router/
+    routes.js             { path, component, label, icon }[]
+    Router.svelte         roteamento hash-based simples
+  modules/
+    editor/
+      EditorPage.svelte   orquestra painéis (atual App.svelte)
+      Sidebar.svelte      catálogo + bandeja do pedido
+      Blueprint.svelte
+      Planilha.svelte
+      MateriaPrima.svelte
+      Params.svelte
+      Results.svelte
+      editor.store.js     editor + order (extrai de stores.js)
+    orders/
+      OrdersPage.svelte   lista de pedidos
+      OrderDetail.svelte  edição + docs
+      Docs.svelte
+      orders.store.js
+    clients/
+      ClientsPage.svelte
+      ClientForm.svelte
+      clients.store.js
+    products/
+      ProductsPage.svelte
+      PresetEditor.svelte (extrai de Config.svelte)
+      products.store.js
+    materials/
+      MaterialsPage.svelte
+      materials.store.js
+    pricing/
+      PricingPage.svelte
+      Pricing.svelte
+      Commission.svelte
+      TaxConfig.svelte    NOVO — configuração de impostos por UF
+      pricing.store.js
+    cutplan/
+      CutPlanPage.svelte
+      CutPlan.svelte
+      Nesting.svelte
+    settings/
+      SettingsPage.svelte
+      Config.svelte (abas: empresa + descrição; materiais/bitolas/catálogo vão para os módulos)
+      settings.store.js
+  lib/                    lógica pura — sem dependência de Svelte
+    engine.js
+    geometry.js
+    draw.js
+    presets.js
+    pricing.js
+    commission.js
+    catalog.js
+    validation.js
+    cutplan.js
+    taxes.js              NOVO — fórmulas ICMS/PIS/COFINS/IPI/DIFAL
+    api.js                NOVO — fetch wrapper (localStorage agora, API depois)
+  components/             atoms/molecules usados em 2+ módulos
+    Tooltip.svelte
+    Modal.svelte
+    Badge.svelte
+  stores/
+    app.store.js          companyInfo, printConfig, descConfig (extrai de stores.js)
+    session.store.js      usuário logado (futuro)
+  App.svelte              shell: header + sidebar + <RouterView />
+  app.css
+```
+
+### 6.3 Backend — estrutura planejada (Python FastAPI)
+
+```
+backend/
+  pyproject.toml           / requirements.txt
+  Dockerfile
+  alembic/
+    env.py
+    versions/
+      0001_initial.py
+  src/
+    main.py                FastAPI app, registra routers
+    config.py              Settings (env vars)
+    database.py            engine SQLAlchemy, get_db()
+    models/                SQLAlchemy ORM
+      client.py
+      order.py
+      product.py
+      material.py
+      pricing.py
+      tax.py
+      settings.py
+    schemas/               Pydantic (request/response)
+      client.py
+      order.py
+      pricing.py
+      tax.py
+    routers/
+      clients.py
+      orders.py
+      products.py
+      materials.py
+      pricing.py           tabela de preços por região
+      taxes.py             TaxConfig + cálculo de impostos
+      settings.py
+    services/
+      taxes.py             lógica de ICMS/PIS/COFINS/IPI/DIFAL
+      pricing.py
+docker-compose.yml         frontend (vite) + backend (fastapi) + postgres
+```
+
+---
+
+## 7. Modelo de impostos (TaxConfig)
+
+### 7.1 Impostos que afetam distribuidoras de aço (Lucro Presumido)
+
+| Imposto | Aplicação | Alíquota típica | Observação |
+|---|---|---|---|
+| **ICMS interno** | Venda no mesmo estado | 12–18% (varia por UF) | "Por dentro" — incluso no preço de venda |
+| **ICMS interestadual** | Venda B2B para outro estado | 7% (N/NE/ES) ou 12% (S/SE/CO) | O destino retém a alíquota interna dele |
+| **DIFAL** | Venda para não-contribuinte em outro estado | aliq_destino − aliq_interestadual | Responsabilidade do remetente desde EC 87/2015 |
+| **PIS** | Sobre faturamento bruto | 0,65% | Regime cumulativo (Lucro Presumido) |
+| **COFINS** | Sobre faturamento bruto | 3,00% | Regime cumulativo |
+| **IPI** | Produtos industrializados (NCM) | 0% para perfil de aço | Perfil dobrado formado a frio: NCM 7216.x → IPI 0%. Cobrar só se NCM do produto exigir |
+
+**Total PIS+COFINS típico: 3,65%.**
+**ICMS interno SP: 18% → carga total SP: 21,65%.**
+**IPI incluir no modelo como campo configurável (default 0%).**
+
+### 7.2 Fórmula "por dentro" — preço de venda
+
+O padrão brasileiro para mercadorias é preço com impostos embutidos. A fórmula correta:
+
+```
+carga = ICMS + PIS + COFINS + IPI    (em decimal, ex: 0,2165)
+PV = custo / (1 - carga - margem_desejada)
+```
+
+Isso é diferente do markup simples (`custo × (1 + margem)`), que ignora que os impostos saem da receita — não do custo. Com carga de 21,65% e margem de 35%:
+
+```
+markup simples: R$10 × 1,35 = R$13,50  → margem real = (13,50−10)/13,50 = 25,9% (não 35%)
+por dentro:     R$10 / (1−0,2165−0,35) = R$10 / 0,4335 = R$23,07 → margem real = 35%
+```
+
+**Atenção ao implantar:** o `pricing.js` atual usa markup simples. A mudança para "por dentro" vai elevar o preço de venda sugerido. Documentar e alinhar com o usuário antes de implantar.
+
+### 7.3 DIFAL (venda interestadual para não-contribuinte)
+
+```
+Base_DIFAL = PV / (1 - aliq_ICMS_destino)
+DIFAL      = Base_DIFAL × (aliq_ICMS_destino - aliq_interestadual)
+```
+
+O DIFAL reduz a margem efetiva — não é adicionado ao preço visível. Modelar como custo adicional que diminui a margem calculada.
+
+### 7.4 Struct TaxConfig
+
+```js
+// src/lib/taxes.js
+{
+  id: string,
+  nome: string,               // ex: "SP → SP (interno)", "SP → MG (contribuinte)"
+  uf_origem: string,          // UF da empresa
+  uf_destino: string,         // UF do cliente
+  contribuinte_icms: boolean, // se o cliente é contribuinte (muda tipo de ICMS)
+
+  // Imposto sobre receita (por dentro — em %)
+  icms: number,               // alíquota aplicável (interna ou interestadual)
+  pis: number,                // default 0.65
+  cofins: number,             // default 3.00
+  ipi: number,                // default 0 (perfil de aço = NCM 7216.x → IPI 0%)
+
+  // DIFAL — preencher só quando venda interestadual para não-contribuinte
+  difal_ativo: boolean,
+  icms_interestadual: number, // alíquota entre estados (7 ou 12)
+  icms_uf_destino: number,    // alíquota interna do estado destino
+
+  // Referência
+  margem_minima: number,      // aviso se precificar abaixo disto (%)
+}
+```
+
+### 7.5 Tabela ICMS interestadual (referência)
+
+```
+Origem S/SE/CO → destino N/NE/ES/AM:    7%
+Origem S/SE/CO → destino S/SE/CO:      12%
+Dentro do mesmo estado:                 alíquota interna (SP: 18%, MG: 18%, RS: 12%…)
+Importados (>40% conteúdo importado):   4% (independente de destino)
+```
+
+---
+
+## 8. Lógica de cálculo (referência)
 
 Arquivo: `src/lib/engine.js`. Variáveis em mm salvo indicação.
 
-**Desenvolvimento (largura do blank):**
+**Desenvolvimento:**
 ```
 des = Σ(medidas das abas) − Σ(desconto por dobra)
 ```
 
-**Desconto por dobra — Fator K (automático):**
+**Desconto por dobra — Fator K:**
 ```
-A  = ângulo da dobra (rad)
-BA = A · (R + K · t)                      // bend allowance
-SB = (conv == 'int' ? R : R + t) · tan(A/2)   // setback
+A  = ângulo (rad)
+BA = A · (R + K · t)
+SB = (conv == 'int' ? R : R + t) · tan(A/2)
 BD = 2 · SB − BA
 ```
 **Desconto por dobra — manual:** `BD = manBD · (ângulo / 90)`
 
-**Peso (líquido):**
+**Peso líquido:**
 ```
-kgm   = des · t · dens / 1e6              // kg por metro (des,t em mm; dens kg/m³)
-pcLiq = kgm · (C / 1000)                  // kg por peça (C = comprimento em mm)
+kgm   = des · t · dens / 1e6
+pcLiq = kgm · (C / 1000)
 totLiq = pcLiq · Q
 ```
 
 **Aproveitamento — Bobina:**
 ```
-tiras = floor(largura_bobina / des)
-sobra = largura_bobina − tiras · des            // mm
-apr   = tiras · des / largura_bobina            // %
-larguraFat = cobrarSobra ? largura_bobina / tiras : des
+larguraUtil = coil − 2·refilo
+tiras = floor((larguraUtil + espac) / (des + espac))
+sobra = larguraUtil − tiras·des − (tiras−1)·espac
+apr   = tiras·des / coil
+larguraFat = cobrarSobra ? coil / tiras : des
 ```
 
 **Aproveitamento — Chapa (L × Cch):**
 ```
-a1 = floor(L / des) · floor(Cch / C)
-a2 = floor(L / C)   · floor(Cch / des)          // girada 90°
-perSheet = max(a1, a2);  orient = a1 ≥ a2 ? 'reta' : 'girada 90°'
-areaBlank = des · C;  areaSheet = L · Cch
-apr   = perSheet · areaBlank / areaSheet        // %
-sobra = areaSheet − perSheet · areaBlank        // mm²
-larguraFat = cobrarSobra ? (areaSheet / perSheet) / C : des
+a1 = floor((L−2·refilo) / (des+espac)) · floor((Cch−2·refilo) / (C+espac))
+a2 = (girado 90°)
+perSheet = max(a1, a2)
+apr = perSheet · des · C / (L · Cch)
 ```
 
 **Peso faturado:**
 ```
 kgmFat = larguraFat · t · dens / 1e6
-pcFat  = kgmFat · (C / 1000)
-totFat = pcFat · Q
-tot_cobrado = cobrarSobra ? totFat : totLiq
+totFat = kgmFat · (C / 1000) · Q
 ```
 
-**Objeto de parâmetros (`editor.params`):**
-```js
-{ matName, dens, revest, t,
-  forma: 'bobina' | 'chapa', coil, chapaL, chapaC, cobrarSobra,
-  C, Q, R, K, manBD, mg }
+**Preço de venda (com impostos — a implementar):**
 ```
-**Linha da planilha (`editor.rows[i]`):** `[label, medida(mm), anguloDobra(°), sentido(+1|-1)]`.
-
----
-
-## 6. Estrutura de arquivos
-
+carga   = icms + pis + cofins + ipi          (decimal)
+PV_kg   = custo_kg / (1 − carga − margem)
+PV_item = PV_kg · tot_cobrado_kg
 ```
-src/
-  lib/
-    engine.js     cálculo: desenvolvimento, peso líq/fat, aproveitamento, descrição, mpSummary
-    geometry.js   Maker.js: buildModel, toDXF, toSVGString, download
-    draw.js       renderizador SVG cotado (compartilhado editor + documentos)
-    presets.js    catálogo de perfis (PRESETS, CAT_ORDER, ICONS)
-    pricing.js    tabela de preço por região (localStorage) — refeita na fatia 2
-    commission.js (a criar — fatia 2) regra composicional de comissão
-    stores.js     estado: editor, order, ctx, regions, regionId
-  components/
-    Sidebar.svelte      catálogo + bandeja do pedido
-    Blueprint.svelte    desenho cotado (usa draw.js)
-    Planilha.svelte     abas e dobras (Excel-like)
-    MateriaPrima.svelte forma bobina/chapa, revestimento, cobrar sobra, unidades, tooltips
-    Params.svelte       dobra (K/manual) + peça (compr., qtd, margem)
-    Results.svelte      desenvolvimento, peso líq/fat, corte, descrição, export DXF
-    Docs.svelte         overlay: orçamento e ordem de produção (imprimível)
-    Pricing.svelte      tabela de preço por região (modal) — refeita na fatia 2
-    Commission.svelte   (a criar — fatia 2) configuração da regra de comissão
-    Tooltip.svelte      “?” reutilizável
-  App.svelte            layout, barra superior, wiring de itens/documentos/preços
-  app.css               design tokens + base
+
+**Comissão (commission.js):**
+```
+bases = { venda, margem, peso, area, quantidade }
+// modo percent: baseValor × (valor / 100)
+// modo fixo:    baseValor × valor
+// faixas escalonadas: Σ(fatia_i × taxa_i)
 ```
 
 ---
 
-## 7. Convenções e decisões tomadas
+## 9. Convenções e decisões tomadas
 
 - **Coordenadas SVG sempre com ponto decimal** (`co()` em `draw.js`). Nunca usar a
-  formatação pt-BR (`nf`, vírgula) em coordenadas — quebra o `points` do SVG.
+  formatação pt-BR (`nf`, vírgula) em coordenadas.
 - **`nf(n, casas)`** formata número pt-BR para exibição; **`brl(n)`** para R$.
 - **ext/int:** convenção da medida muda o setback (`R` vs `R+t`) e o lado da cota.
 - **K vs manual:** manual é o que a maioria confia (calibrar pela dobradeira).
 - **DXF:** export sem `usePOLYLINE` para gerar entidades `ARC` explícitas.
+- **effectivePreset(key, $catalogOverrides):** sempre usar esta função ao carregar
+  geometria — respeita overrides do usuário sem mutar o preset padrão.
 - **Design tokens** (`app.css`): workbench `#E7EAEE`, painel `#FFF`, tinta `#16202B`,
   canvas blueprint `#182230`, aço (linha) `#5FA8E0`, cota `#F4B740`, âmbar `#EA8A1E`.
   Fontes: IBM Plex Sans (UI), IBM Plex Mono (números/medidas), Space Grotesk (marca).
+- **Geometria/física sempre no frontend:** `engine.js`, `geometry.js`, `cutplan.js`
+  nunca vão para o backend. O backend recebe snapshots calculados.
+- **api.js como camada de isolamento:** qualquer acesso a dados passa por `api.js`.
+  Hoje retorna localStorage; quando o backend existir, troca para fetch.
 
 ---
 
-## 8. Roadmap (fatias)
+## 10. Ferramental de dobradeira (Tooling)
+
+### 10.1 Entidades
+
+#### Punção (`Punch`)
+
+```js
+{
+  id: string,           // nanoid
+  name: string,         // ex: "Promecam 88° R0.8"
+  tipAngleDeg: number,  // ângulo incluso da ponta: 30, 60, 85, 88, 90
+  tipRadius: number,    // raio da ponta em mm: 0.5, 0.8, 1.0
+}
+// Derivado: maxBendAngle = 180 - tipAngleDeg
+// Ex: ponta 88° → dobra máxima 92°; ponta 30° → dobra máxima 150°
+```
+
+#### Matriz (`Die`)
+
+```js
+{
+  id: string,
+  name: string,           // ex: "V=8 ombro R1.0"
+  vOpening: number,       // abertura V em mm: 6, 8, 10, 12, 16, 20, 25, 32, 40
+  shoulderRadius: number, // raio dos ombros em mm: 0.8, 1.0, 1.5, 2.0
+  openingAngleDeg: number // ângulo de abertura da matriz: 88 (padrão), 60, 30
+}
+// Derivados:
+//   tMin         = vOpening / 8       (bitola mínima recomendada)
+//   tMax         = vOpening / 6       (bitola máxima recomendada)
+//   rSuggested   = vOpening / 6       (raio interno sugerido — air bending, aço)
+//   minFlange    = (vOpening / 2) + 2*t  (aba mínima para apoio no ombro)
+//   maxBendAngle = 180 - openingAngleDeg
+```
+
+#### Máquina (`Machine`) — v2, não implementada ainda
+
+Agrupador de punções e matrizes disponíveis em uma dobradeira específica (tonelagem, comprimento útil). V1 usa punção e matriz diretamente sem agrupador.
+
+### 10.2 Regras derivadas do ferramental
+
+| Regra | Fórmula | Tipo |
+|---|---|---|
+| Bitola mínima | `t ≥ V / 8` | Aviso |
+| Bitola máxima | `t ≤ V / 6` | Aviso |
+| Raio sugerido (air bending) | `R = V / 6` (aço); `V / 7` (inox); `V / 5` (alumínio) | Sugestão |
+| Raio mínimo absoluto | `R ≥ max(shoulderRadius, tipRadius, t × 0.5)` | Erro |
+| Aba mínima por tooling | `(V / 2) + 2×t` | Erro (soma com restrição do catálogo — prevalece o mais restritivo) |
+| Ângulo máximo por punção | `dobra ≤ 180 - tipAngleDeg` | Erro |
+| Ângulo máximo por matriz | `dobra ≤ 180 - openingAngleDeg` | Erro |
+
+**Merge de restrições (mais restritivo prevalece):**
+
+```js
+merged.minFlange = Math.max(catRestriction.minFlange, toolingRestriction.minFlange)
+merged.minRadius = Math.max(catRestriction.minRadius, toolingRestriction.minRadius)
+merged.maxBendAngle = toolingRestriction.maxBendAngle  // só vem do tooling
+```
+
+### 10.3 Impacto no cálculo
+
+- **R padrão atual:** `R=2` fixo, sem relação com a matriz usada. Com tooling: sugestão `R = V/6` exibida em Params.svelte. Em V=16, o correto é R≈2.7 — diferença de ~0.5 mm por dobra, 2 mm no blank de 4 dobras.
+- **Aproveitamento:** `params.t` já alimenta `compute()` corretamente. O tooling adiciona apenas a validação de compatibilidade da bitola com a matriz — o cálculo em si não muda.
+- **Fator K:** aviso sugerido quando `R < 2×t` (zona plástica intensa → K ≈ 0.33, não 0.44 default).
+
+### 10.4 Integração no código
+
+**Novo arquivo:** `src/lib/tooling.js`
+
+```js
+export function toolingRestrictions(punch, die, t) {
+  if (!punch || !die) return { minFlange: 0, minRadius: 0, maxBendAngle: 180 };
+  return {
+    minFlange:    (die.vOpening / 2) + 2 * t,
+    minRadius:    Math.max(die.shoulderRadius, punch.tipRadius, t * 0.5),
+    maxBendAngle: Math.min(180 - punch.tipAngleDeg, 180 - die.openingAngleDeg),
+    rSuggested:   die.vOpening / 6,
+    tMin:         die.vOpening / 8,
+    tMax:         die.vOpening / 6,
+  };
+}
+```
+
+**Onde plugar:**
+- `stores.js` — adicionar `activePunchId`, `activeDieId`, `catalogPunches`, `catalogDies` (localStorage)
+- `validation.js` — merge de tooling com catálogo no `validateProfile()`; checar ângulo por dobra
+- `Params.svelte` — badge de R sugerido; aviso de bitola fora da faixa da matriz
+- `Config.svelte` — nova aba "Ferramental" com CRUD de punções e matrizes
+
+**Novo componente:** `Tooling.svelte` — seletor de punção+matriz ativa (global por sessão).
+
+### 10.5 Escopo das versões
+
+**v1 (implementar agora):**
+- CRUD de Punções e Matrizes em Config → aba Ferramental
+- Seleção global de punção+matriz ativa (por sessão, não por dobra)
+- Validação integrada em `validateProfile()` (mais restritivo prevalece)
+- Badge de R sugerido em Params.svelte
+- Aviso de compatibilidade de bitola com matriz
+
+**v2 (deixar para depois):**
+- Entidade Máquina (agrupamento de ferramentas, filtra lista de punções/matrizes disponíveis)
+- Seleção de tooling por dobra individual
+- Cálculo de força: `F = (C × t² × Rm) / V` — validar tonelagem da máquina
+- Coeficiente `vRatioK` por material para R sugerido mais preciso
+- Biblioteca pré-cadastrada (Amada, Trumpf, Promecam)
+
+---
+
+## 11. Roadmap
+
+### Fatias de produto
 
 | # | Fatia | Status |
 |---|---|---|
-| 1 | Matéria-prima (bobina/chapa) + unidades + tooltips + **cobrar sobra** | ✅ feito |
-| 2 | **Preço dual (custo+venda, própria+concorrente)** + **comissão composicional** | ⬜ a fazer |
-| 3 | **Blank / aproveitamento** visual (nesting) com orientação por máquina | ⬜ a fazer |
-| 4 | **Telha** (convencional/sanduíche) e **composto** | ⬜ a fazer |
-| 5 | **Templates de descrição** configuráveis por tipo de produto | ⬜ a fazer |
+| 1 | Matéria-prima (bobina/chapa) + unidades + cobrar sobra + refilo/folga | ✅ feito |
+| 2 | Preço dual (custo+venda, própria+concorrente) + comissão composicional | ✅ feito |
+| Config | Catálogo configurável (materiais, bitolas, presets, empresa, descrição) | ✅ feito |
+| CutPlan | Plano de corte visual para chapas (shell-packing, nesting, impressão) | ✅ feito |
+| 3 | SPA modular (sidebar + header + rotas por módulo) | ⬜ próximo |
+| 4 | Ferramental (Punção + Matriz): CRUD + restrições + sugestão de R | ⬜ próximo |
+| 5 | Impostos de saída (TaxConfig: ICMS × UF, PIS/COFINS, IPI, DIFAL) | ⬜ a fazer |
+| 6 | Clientes (cadastro, CNPJ, IE, UF, contribuinte ICMS) | ⬜ a fazer |
+| 7 | Telha (convencional/sanduíche) e Composto | ⬜ a fazer |
+| 8 | Templates de descrição configuráveis por tipo de produto | ⬜ a fazer |
 
-**Extras (fase 2):**
-- Preview **3D** do perfil extrudado (Threlte/Three.js, a partir do contorno 2D).
-- Empacotamento **desktop (Tauri)** com fontes embutidas (offline).
-- Preço por **cidade/UF** além de região; importação de tabela.
-- **Estoque de bobina por lote** ligado ao corte.
-- Detecção de auto-interseção no traçado do modo livre (dobras compostas).
+### Arquitetura (fases)
 
----
+| Fase | O que muda | Quando |
+|---|---|---|
+| **Fase 1** | Reorganizar frontend em módulos (`src/modules/`) + SPA com sidebar/rotas | Agora |
+| **Fase 2** | Criar `api.js` com fallback localStorage → pronto para backend | Fase 1 concluída |
+| **Fase 3** | Backend Python FastAPI + Docker + PostgreSQL (começa por clients + pricing + orders) | Quando precisar de multi-usuário ou persistência central |
+| **Fase 4** | Tauri (desktop offline) usando o mesmo frontend | Pós-backend |
 
-## 9. Fatia 2 — Preço e comissão (especificação completa)
+### Extras (fase 2+)
 
-### 9.1 Tabela de preço
-
-**Modelo dual:** cadastra **custo** e **preço de venda** — ambos por região e por
-material/revestimento. A margem efetiva sai da divisão; quando o usuário edita
-um dos três (custo, venda, margem), os outros se ajustam.
-
-**Granularidade:** região × material × revestimento × forma. Bitola entra como
-modificador opcional (a maioria das operações cobra por kg sem distinguir bitola,
-mas quem quiser distinguir tem o campo).
-
-**Concorrente:** mesma estrutura, em segunda coluna. **Não entra no cálculo de
-venda** — serve só pro comparativo no orçamento, com delta % vs nosso preço.
-
-**Estrutura sugerida** (`src/lib/pricing.js`, bump da chave para `perfilar.precos.v2`):
-
-```js
-// Region shape
-{
-  id: 'sp-capital',
-  nome: 'SP — Capital',
-  precos: {                                       // tabela própria
-    'Galvanizado': {
-      'Z275':         { custo: 8.50, venda: 11.48 },
-      'Z350':         { custo: 8.90, venda: 12.01 },
-    },
-    'Aço preto': { 'Sem revestimento': { custo: 7.20, venda: 9.72 } },
-  },
-  concorrente: { /* mesma estrutura */ }
-}
-
-// API
-priceFor(regions, regionId, material, revest, tipo='propria')
-// → { custo, venda, margem } (margem calculada: (venda-custo)/custo)
-```
-
-**Unidade por tipo de produto:** o campo `unidade` do produto define se o preço
-é R$/kg (perfil, chapa, composto), R$/m² ou R$/m (telha). Default no app:
-R$/kg para tudo, exceto telha = R$/m².
-
-**UI (`Pricing.svelte`):**
-
-- Modal mais largo. Cabeçalho com seletor de região editável + abas “Própria”/“Concorrente”.
-- Tabela: linhas = material+revestimento; colunas = `custo` / `venda` / `margem%`.
-  Editar qualquer um dos três recalcula o terceiro.
-- Botões: importar CSV, exportar CSV, duplicar de outra região, restaurar padrão.
-- Validação: avisar quando `venda < custo` (margem negativa).
-
-**No orçamento (`Docs.svelte`):**
-
-- Adicionar coluna "Concorrente" com preço e delta % (verde se nosso < concorrente, amber se >).
-- Manter o total faturado usando o preço próprio (concorrente é só referência).
-
-### 9.2 Comissão composicional
-
-**Modelo:** toda regra de comissão se descreve em **3 dimensões + modificadores**:
-
-```js
-{
-  base: 'venda' | 'margem' | 'peso' | 'area' | 'quantidade',
-  modo: { tipo: 'percent' | 'fixo' | 'fator', valor: Number },
-  // Modificadores opcionais:
-  faixas: [{ ate: Number, valor: Number }],   // escalonamento por base
-  gatilho: 'faturamento' | 'recebimento',     // quando paga (padrão: faturamento)
-  inadimplencia: { dias: Number, acao: 'desconta' | 'suspende' | 'ignora' },
-  porLinha: { 'perfil': 0.03, 'telha': 0.05, 'chapa': 0.02 },
-}
-```
-
-**Cobertura (todos esses cenários do mercado caem na mesma engine):**
-
-| Cenário | base | modo | modificador |
-|---|---|---|---|
-| 3% sobre faturamento | `venda` | percent 3 | — |
-| 10% sobre margem | `margem` | percent 10 | — |
-| R$ 0,15 por kg | `peso` | fixo 0.15 | — |
-| Escalonada por meta | `venda` | percent (em faixas) | `faixas` |
-| Fator × peso × R$/kg | `peso` | fator 0.02 | — |
-| Diferente por linha | `venda` | percent (default) | `porLinha` |
-| Só com recebimento | qualquer | qualquer | `gatilho:'recebimento'` |
-
-**Cálculo (`src/lib/commission.js`):**
-
-```js
-export function commissionForItem(item, rule) {
-  const linhaPct = rule.porLinha?.[item.tipoProduto];
-  const effRule = linhaPct ? { ...rule, modo: { tipo: 'percent', valor: linhaPct } } : rule;
-
-  const venda  = item.precoTotal;         // R$
-  const custo  = item.custoTotal;         // R$
-  const margem = venda - custo;           // R$
-  const peso   = item.C.tot;              // kg
-  const area   = item.areaM2 || 0;        // m²
-  const qtd    = item.params.Q;
-
-  const bases = { venda, margem, peso, area, quantidade: qtd };
-  const baseValor = bases[effRule.base];
-
-  if (effRule.faixas?.length) return faixasComissao(baseValor, effRule.faixas);
-  switch (effRule.modo.tipo) {
-    case 'percent': return baseValor * (effRule.modo.valor / 100);
-    case 'fixo':    return baseValor * effRule.modo.valor;
-    case 'fator':   return baseValor * effRule.modo.valor;
-  }
-}
-
-function faixasComissao(valor, faixas) {
-  let acc = 0, prev = 0;
-  for (const f of faixas) {
-    const fatia = Math.max(0, Math.min(valor, f.ate) - prev);
-    acc += fatia * (f.valor / 100);
-    prev = f.ate;
-    if (valor <= f.ate) break;
-  }
-  return acc;
-}
-```
-
-**Validar com exemplos** (testes node como em `calc_test.js`):
-
-```
-Pedido: peso 850 kg, custo R$ 7.225,00, venda R$ 9.753,75, margem R$ 2.528,75
-- 3% venda      → R$ 292,61
-- 10% margem    → R$ 252,88
-- R$ 0,15/kg    → R$ 127,50
-- Fator peso × 0.02 × (venda/peso=11,475) → R$ 195,07
-- Escalonada (1.5% até 5k, 2.5% 5–15k, 4% acima):
-    5000·0.015 + (9753.75-5000)·0.025 = 75 + 118,84 = R$ 193,84
-```
-
-**UI (`Commission.svelte`):**
-
-- 3 presets rápidos como cards selecionáveis:
-  - “% sobre venda” (default 3%)
-  - “% sobre margem” (default 10%)
-  - “R$ fixo por kg” (default 0,15)
-- Botão “Avançado…” expande: seletor de base, modo, e os modificadores:
-  - Editor de faixas (tabela: até R$ X → Y%).
-  - Override por linha de produto (tabela: perfil/telha/chapa → %).
-  - Gatilho (faturamento/recebimento) e regra de inadimplência.
-- Persistência: regra default global em localStorage; cada item pode sobrescrever.
-- Mostrar resultado ao lado: valor da comissão por item e total do pedido.
-
-**No orçamento:**
-
-- Bloco de comissão por item (compacto) + total no rodapé.
-- Opção “gerar resumo do vendedor” (uma página com pedido × comissão).
-
-### 9.3 Ordem de implementação sugerida
-
-1. Refatorar `pricing.js` para o modelo dual (`custo` + `venda`, com `priceFor` retornando os três valores).
-2. Atualizar `Pricing.svelte` (tabela com 3 colunas + abas Própria/Concorrente).
-3. Atualizar `Docs.svelte` (orçamento) para mostrar coluna concorrente + delta.
-4. Criar `commission.js` com a engine composicional + testes.
-5. Criar `Commission.svelte` (3 presets + Avançado).
-6. Ligar comissão no item e mostrar no orçamento.
-7. Migrar localStorage da v1 para v2 (com fallback amigável).
-8. Atualizar tooltips e unidades nos novos campos.
+- Máquina como agrupador de ferramentas; cálculo de força de dobra vs tonelagem.
+- Biblioteca pré-cadastrada de punções/matrizes (Amada, Trumpf, Promecam).
+- Preview 3D do perfil extrudado (Threlte/Three.js).
+- Estoque de bobina por lote ligado ao plano de corte.
+- Preço por cidade/UF além de região; importação de tabela CSV.
+- Nesting avançado para bobina (múltiplos SKUs na mesma largura).
+- Agrupamento de itens por matéria-prima no pedido.
 
 ---
 
-## 10. Itens em aberto / a validar com o cliente
+## 12. Itens em aberto / a validar
 
-- Telha: confirmar parâmetros (passo da onda, recobrimento, núcleo da sanduíche).
-- Comissão: a base default no app começa em `venda` (mais comum); operações que
-  preferem `margem` ajustam no Avançado.
-- OP: confirmado “as duas” (folha única e uma por item) — vendedor escolhe.
-- Nesting: regras específicas por máquina (largura útil, refilo, distância entre peças).
-- Bitolas fora da tabela: campo “Outra” já existe; confirmar faixa usada.
-- Preço por bitola dentro de um mesmo material/revestimento: deixado como
-  modificador opcional na fatia 2 — usar só se a operação precisar.
+- **Impostos "por dentro":** mudar pricing.js de markup simples para fórmula com carga tributária vai subir o PV sugerido — alinhar com usuário antes de implantar.
+- **IPI:** perfil de aço formado a frio (NCM 7216.x) → IPI 0%. Confirmar se a operação trabalha com NCMs que tenham IPI > 0 antes de simplificar o campo.
+- **DIFAL:** alíquotas por convênio mudam — a tabela de ICMS por UF deve ser editável pelo usuário, não hardcoded.
+- **Comissão por item:** hoje usa regra global. Salvar override de comissão por item do pedido é pendente.
+- **Tooling — coeficiente R por material:** hoje `R = V / 6` para todos. Aço carbono/galvanizado = V/6; inox = V/7; alumínio = V/5. Confirmar se é relevante para a operação antes de adicionar `vRatioK` aos materiais.
+- **Telha:** confirmar parâmetros (passo da onda, recobrimento, núcleo da sanduíche).
+- **Nesting de bobina com múltiplos SKUs:** algoritmo atual assume 1 SKU por bobina.
+- **OP:** confirmado "as duas" (folha única e uma por item).

@@ -1,283 +1,236 @@
 <script>
-  import { get } from 'svelte/store';
-  import { editor, order, ctx, regions, regionId, freshEditor, catalogOverrides, catalogPresets, descConfig, catalogMaterials, companyInfo } from './lib/stores.js';
-  import { PRESETS, clone } from './lib/presets.js';
-  import { compute, describe, buildDescCfg, nf, brl } from './lib/engine.js';
-  import { priceFor } from './lib/pricing.js';
-  import { effectivePreset, DEFAULT_RESTRICTIONS } from './lib/catalog.js';
-  import { validateProfile } from './lib/validation.js';
+  import Router from './router/Router.svelte';
+  import { routes, navGroups } from './router/routes.js';
 
-  import Sidebar      from './components/Sidebar.svelte';
-  import Blueprint    from './components/Blueprint.svelte';
-  import Planilha     from './components/Planilha.svelte';
-  import MateriaPrima from './components/MateriaPrima.svelte';
-  import Params       from './components/Params.svelte';
-  import Results      from './components/Results.svelte';
-  import Docs         from './components/Docs.svelte';
-  import Pricing      from './components/Pricing.svelte';
-  import Commission   from './components/Commission.svelte';
-  import Config       from './components/Config.svelte';
-  import CutPlan      from './components/CutPlan.svelte';
-
-  let doc = { open: false, kind: 'op' };
-  let showPricing    = false;
-  let showCommission = false;
-  let showConfig     = false;
-  let cutPlanGroup   = null;
-
-  $: C    = compute($editor.rows, $editor.params, $editor.conv, $editor.bd);
-  $: name = $editor.mode === 'cat' && PRESETS[$editor.key] ? PRESETS[$editor.key].name : 'Perfil livre';
-  $: sel  = $order.sel;
-
-  $: ordTot  = $order.items.reduce((a, it) => a + it.C.tot, 0);
-  $: ordTotR = $order.items.reduce((a, it) => a + (it.total || 0), 0);
-
-  $: groups = (() => {
-    const map = new Map();
-    $order.items.forEach((it, i) => {
-      const p = it.params;
-      const key = p.forma === 'bobina'
-        ? `${p.matName}|${p.revest}|${p.t}|bobina|${p.coil}`
-        : `${p.matName}|${p.revest}|${p.t}|chapa|${p.chapaL}x${p.chapaC}`;
-      if (!map.has(key)) {
-        const dim = p.forma === 'bobina'
-          ? `bobina ${nf(p.coil, 0)} mm`
-          : `chapa ${nf(p.chapaL, 0)}×${nf(p.chapaC, 0)} mm`;
-        const rev = p.revest !== 'Sem revestimento' ? ` ${p.revest}` : '';
-        map.set(key, { label: `${p.matName}${rev} ${nf(p.t, 2)} mm — ${dim}`, entries: [], totKg: 0 });
-      }
-      const g = map.get(key);
-      g.entries.push({ it, i });
-      g.totKg += it.C.tot;
-    });
-    return [...map.values()];
-  })();
-
-  // Restrições do preset ativo (built-in com override, ou padrão)
-  $: restrictions = $editor.mode === 'cat'
-    ? (effectivePreset($editor.key, $catalogOverrides)?.restrictions ?? DEFAULT_RESTRICTIONS)
-    : DEFAULT_RESTRICTIONS;
-
-  // Validação em tempo real
-  $: violations = validateProfile($editor.rows, $editor.params, $editor.h0, restrictions);
-
-  function load(key) {
-    const p = effectivePreset(key, $catalogOverrides) ?? PRESETS[key];
-    if (!p) return;
-    $editor.mode = 'cat'; $editor.key = key; $editor.h0 = p.h0; $editor.rows = clone(p.rows);
-    $editor = $editor;
-    $order.sel = -1; $order = $order;
+  function getRoute() {
+    const hash = window.location.hash.replace(/^#\/?/, '');
+    return hash || 'editor';
   }
 
-  function loadCustom(preset) {
-    $editor.mode = 'cat'; $editor.key = preset.key;
-    $editor.h0   = preset.h0;
-    $editor.rows = clone(preset.rows);
-    $editor = $editor;
-    $order.sel = -1; $order = $order;
-  }
+  let routePath = getRoute();
+  window.addEventListener('hashchange', () => { routePath = getRoute(); });
 
-  function snapshot() {
-    const e  = get(editor);
-    const Cc = compute(e.rows, e.params, e.conv, e.bd);
-    const customP = get(catalogPresets).find((p) => p.key === e.key);
-    const nm = (e.mode === 'cat' && PRESETS[e.key])
-      ? PRESETS[e.key].name
-      : customP?.name ?? 'Perfil livre';
-    const { custo: custoKg } = priceFor(get(regions), get(regionId), e.params.matName, e.params.revest);
-    const custoTotal = Cc.tot * custoKg;
-    const precoTotal = custoTotal * (1 + e.params.mg / 100);
-    return {
-      key: e.key, mode: e.mode, h0: e.h0, conv: e.conv, bd: e.bd,
-      rows: clone(e.rows), params: clone(e.params), C: Cc,
-      custoTotal, precoTotal,
-      total: precoTotal,
-      tipoProduto: 'perfil',
-      name: nm, label: `${nm} ${e.params.matName.toLowerCase()} ${nf(e.params.t, 2)}`,
-      code: describe(nm, e.params, Cc.des, e.rows, e.conv, e.key, buildDescCfg(get(descConfig), get(catalogMaterials))),
-    };
-  }
+  let collapsed = false;
 
-  function addItem() {
-    const snap = snapshot();
-    if ($order.sel >= 0) $order.items[$order.sel] = snap;
-    else { $order.items.push(snap); $order.sel = $order.items.length - 1; }
-    $order = $order;
-  }
-  function newItem() { $order.sel = -1; $order = $order; editor.set(freshEditor()); }
-  function remove(i) {
-    $order.items.splice(i, 1);
-    if ($order.sel >= i) $order.sel -= 1;
-    $order = $order;
-  }
-  function loadItem(i) {
-    const it = $order.items[i];
-    editor.set({ mode: it.mode, key: it.key, conv: it.conv, bd: it.bd, h0: it.h0, rows: clone(it.rows), params: clone(it.params) });
-    $order.sel = i; $order = $order;
-  }
+  const grouped  = navGroups.map((g) => ({ ...g, routes: routes.filter((r) => r.group === g.key) }));
+  const settings = routes.filter((r) => r.group === null);
 
-  function openOP()  { if (!$order.items.length) addItem(); doc = { open: true, kind: 'op' }; }
-  function openOrc() { if (!$order.items.length) addItem(); doc = { open: true, kind: 'orc' }; }
+  // SVG inner paths — 20×20 viewport, stroke, no fill
+  const ICONS = {
+    editor:    `<path d="M5 16.5 12.5 9l2 2L7 18.5H5v-2z"/><path d="M12.5 9l.5-.5a1.5 1.5 0 0 1 2.1 2.1l-.6.4"/><path d="M4 18h12"/>`,
+    cutplan:   `<circle cx="5" cy="5" r="2.5"/><circle cx="5" cy="15" r="2.5"/><path d="M8.5 6.5 17 3m-5.5 9 5.5 5M8.5 13.5 12 10"/>`,
+    orders:    `<rect x="5" y="2" width="10" height="16" rx="1.5"/><path d="M8.5 7h3M8.5 10h3M8.5 13h2"/>`,
+    pricing:   `<path d="M10 2.5v15"/><path d="M13 6H8a2.5 2.5 0 0 0 0 5h4a2.5 2.5 0 0 1 0 5H7"/>`,
+    clients:   `<circle cx="10" cy="7" r="3.5"/><path d="M3 19c0-3.3 3.1-5.5 7-5.5s7 2.2 7 5.5"/>`,
+    products:  `<path d="M10 2 18 6.5v7L10 18 2 13.5v-7L10 2z"/><path d="M2 6.5 10 11l8-4.5M10 11v7"/>`,
+    materials: `<path d="M2 14 10 18l8-4M2 10l8 4 8-4M2 6l8 4 8-4"/>`,
+    settings:  `<circle cx="10" cy="10" r="2.5"/><path d="M10 2v2.5M10 15.5V18M2 10h2.5M15.5 10H18M4.3 4.3l1.8 1.8M13.9 13.9l1.8 1.8M4.3 15.7l1.8-1.8M13.9 6.1l1.8-1.8"/>`,
+  };
 </script>
 
 <div class="app">
+
+  <!-- ── Header ─────────────────────────────────────────────────────────── -->
   <header class="bar">
-    <div class="brand"><b>Perfilar</b><span>ferro &amp; aço</span></div>
-    <div class="ctxf">
-      <input placeholder="Cliente" bind:value={$ctx.cliente} />
-      <input placeholder="Nº orçamento" bind:value={$ctx.orc} />
-      <input placeholder="Vendedor" bind:value={$ctx.vendedor} class="narrow" />
-      <input placeholder="Observação" bind:value={$ctx.obs} class="wide" />
+    <div class="brand">
+      <b>Perfilar</b>
+      <span>ferro &amp; aço</span>
     </div>
-    <div class="spacer"></div>
-    <button class="btn btn-ghost" on:click={() => (showConfig     = true)}>Configurações</button>
-    <button class="btn btn-ghost" on:click={() => (showPricing    = true)}>Preços</button>
-    <button class="btn btn-ghost" on:click={() => (showCommission = true)}>Comissão</button>
-    <button class="btn btn-ghost" on:click={openOrc}>Orçamento</button>
-    <button class="btn btn-amber" on:click={openOP}>Ordem de produção</button>
   </header>
 
-  <Sidebar {load} {loadCustom} />
+  <div class="body">
 
-  <main class="main">
-    <div class="editor">
-      <div class="card">
-        <div class="card-h">
-          <span class="t">Seção <span class="dim">· {name}</span></span>
-          {#if violations.length}
-            <span class="vbadge" title={violations.map((v) => v.msg).join('\n')}>
-              ⚠ {violations.length} {violations.length === 1 ? 'aviso' : 'avisos'}
-            </span>
+    <!-- ── Sidebar ────────────────────────────────────────────────────── -->
+    <nav class="nav" class:collapsed>
+
+      <!-- Toggle collapse -->
+      <button
+        class="nav-toggle"
+        class:collapsed
+        on:click={() => (collapsed = !collapsed)}
+        title={collapsed ? 'Expandir menu' : 'Recolher menu'}
+        aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}
+      >
+        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          {#if collapsed}
+            <path d="M7 5l6 5-6 5"/>
+          {:else}
+            <path d="M13 5l-6 5 6 5"/>
           {/if}
-          <div class="toggle">
-            <button class:on={$editor.conv === 'ext'} on:click={() => { $editor.conv = 'ext'; $editor = $editor; }}>Externa</button>
-            <button class:on={$editor.conv === 'int'} on:click={() => { $editor.conv = 'int'; $editor = $editor; }}>Interna</button>
-          </div>
-        </div>
-        <Blueprint rows={$editor.rows} h0={$editor.h0} t={$editor.params.t} conv={$editor.conv} />
-        {#if violations.length}
-          <div class="vlist">
-            {#each violations as v}
-              <div class="vrow" class:coll={v.type === 'collision'}>⚠ {v.msg}</div>
+        </svg>
+        {#if !collapsed}<span>Recolher</span>{/if}
+      </button>
+
+      <!-- Main nav groups -->
+      <div class="nav-scroll">
+        {#each grouped as g}
+          <div class="nav-group">
+            {#if !collapsed}
+              <div class="group-label">{g.label}</div>
+            {:else}
+              <div class="group-divider"></div>
+            {/if}
+            {#each g.routes as r}
+              <a
+                href="#{r.path}"
+                class="nav-item"
+                class:active={routePath === r.path}
+                title={collapsed ? r.label : ''}
+              >
+                <svg class="nav-icon" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  {@html ICONS[r.path] ?? ''}
+                </svg>
+                {#if !collapsed}<span class="nav-label">{r.label}</span>{/if}
+              </a>
             {/each}
           </div>
-        {/if}
+        {/each}
       </div>
-      <Planilha />
-    </div>
 
-    <MateriaPrima />
-    <Params />
-    <Results {C} {name} />
-
-    <div class="foot">
-      <button class="btn btn-amber big" on:click={addItem}>
-        {sel >= 0 ? 'Salvar alterações do item' : 'Adicionar item ao pedido'}
-      </button>
-      <button class="btn btn-line big" on:click={newItem}>Novo item em branco</button>
-    </div>
-
-    {#if $order.items.length > 0}
-      <div class="tray-card">
-        <div class="tray-head">
-          <span class="t">Itens do pedido</span>
-          <span class="tray-tot">{nf(ordTot, 1)} kg · {brl(ordTotR)}</span>
-        </div>
-        <div class="tray-body">
-          {#each groups as g}
-            <div class="tray-group">
-              <div class="group-h">
-                <span class="mp-lbl">{g.label}</span>
-                <div class="group-right">
-                  <span class="group-kg">{nf(g.totKg, 1)} kg</span>
-                  <button class="btn btn-line btn-xs" on:click={() => (cutPlanGroup = g)}>Plano de corte</button>
-                </div>
-              </div>
-              {#each g.entries as { it, i }}
-                <div class="tray-item" class:on={i === sel}>
-                  <div class="nm" on:click={() => loadItem(i)} on:keydown={(e) => e.key === 'Enter' && loadItem(i)} role="button" tabindex="0">
-                    <b>{it.label}</b>
-                    <code class="sku">{it.code}</code>
-                    <small>des {nf(it.C.des, 0)} · {it.params.Q} pç · {nf(it.C.tot, 1)} kg</small>
-                  </div>
-                  <button class="rm" on:click={() => remove(i)}>×</button>
-                </div>
-              {/each}
-            </div>
-          {/each}
-        </div>
+      <!-- Config (bottom pinned) -->
+      <div class="nav-foot">
+        {#if !collapsed}<div class="group-divider"></div>{/if}
+        {#each settings as r}
+          <a
+            href="#{r.path}"
+            class="nav-item"
+            class:active={routePath === r.path}
+            title={collapsed ? r.label : ''}
+          >
+            <svg class="nav-icon" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              {@html ICONS[r.path] ?? ''}
+            </svg>
+            {#if !collapsed}<span class="nav-label">{r.label}</span>{/if}
+          </a>
+        {/each}
       </div>
-    {/if}
-  </main>
+
+    </nav>
+
+    <!-- ── Content ────────────────────────────────────────────────────── -->
+    <main class="content">
+      <Router {routePath} {routes} />
+    </main>
+
+  </div>
 </div>
 
-{#if doc.open}
-  <Docs kind={doc.kind} on:close={() => (doc = { ...doc, open: false })} />
-{/if}
-{#if showPricing}
-  <Pricing on:close={() => (showPricing = false)} />
-{/if}
-{#if showCommission}
-  <Commission on:close={() => (showCommission = false)} />
-{/if}
-{#if showConfig}
-  <Config on:close={() => (showConfig = false)} />
-{/if}
-{#if cutPlanGroup}
-  <CutPlan group={cutPlanGroup} ctx={$ctx} on:close={() => (cutPlanGroup = null)} />
-{/if}
-
 <style>
-  .app { display: grid; grid-template-columns: 282px 1fr; grid-template-rows: auto 1fr; height: 100vh; }
-  .bar { grid-column: 1 / 3; display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 56px; background: var(--ink); color: #fff; flex-wrap: wrap; }
-  .brand { display: flex; align-items: baseline; gap: 8px; }
-  .brand b { font-family: var(--disp); font-weight: 600; font-size: 18px; letter-spacing: .3px; }
-  .brand span { font-family: var(--mono); font-size: 11px; color: #9fb0c2; }
-  .ctxf { display: flex; gap: 8px; }
-  .ctxf input { height: 32px; background: #222e3b; border: 1px solid #2f3d4d; border-radius: 6px; color: #fff; padding: 0 10px; width: 130px; font-size: 13px; }
-  .ctxf input.narrow { width: 90px; }
-  .ctxf input.wide   { width: 180px; }
-  .spacer { flex: 1; }
-  .main { overflow-y: auto; padding: 16px; }
-  .editor { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 14px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
-  .card-h { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--line); gap: 8px; }
-  .t { font-weight: 600; font-size: 13.5px; flex: 1; } .dim { color: var(--ink-soft); font-weight: 400; }
-  .vbadge { font-family: var(--mono); font-size: 11px; background: #fff4e6; color: var(--amber-deep); border: 1px solid #f5d9b0; border-radius: 5px; padding: 2px 8px; cursor: help; white-space: nowrap; }
-  .vlist { background: #fff9f0; border-top: 1px solid #f5d9b0; padding: 8px 12px; display: flex; flex-direction: column; gap: 3px; }
-  .vrow { font-size: 11.5px; color: var(--amber-deep); }
-  .vrow.coll { color: var(--danger); font-weight: 500; }
-  .toggle { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; font-size: 11.5px; }
-  .toggle button { padding: 5px 10px; color: var(--ink-soft); background: none; border: 0; cursor: pointer; }
-  .toggle button.on { background: var(--ink); color: #fff; font-weight: 500; }
-  .foot { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; }
-  .btn { height: 34px; padding: 0 12px; border-radius: 7px; font-weight: 500; font-size: 13px; border: 1px solid transparent; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; }
-  .btn.big { height: 38px; }
-  .btn-amber { background: var(--amber); color: #fff; } .btn-amber:hover { background: #d67d12; }
-  .btn-ghost { background: #222e3b; color: #dfe7ef; border-color: #33414f; } .btn-ghost:hover { background: #2a3543; }
-  .btn-line { background: var(--panel); color: var(--ink); border-color: var(--line); flex: 0 0 auto; } .btn-line:hover { background: var(--panel-2); }
-  .foot .btn-amber { flex: 1; min-width: 200px; }
+  /* ── Layout shell ─────────────────────────────────────────────────────── */
+  .app  { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  .body { flex: 1; display: flex; overflow: hidden; min-height: 0; }
 
-  .tray-card { margin-top: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
-  .tray-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--line); }
-  .tray-head .t { font-weight: 600; font-size: 13.5px; }
-  .tray-tot { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); }
-  .tray-body { padding: 10px 14px; display: flex; flex-direction: column; gap: 10px; }
-  .tray-group { display: flex; flex-direction: column; gap: 6px; }
-  .group-h { display: flex; align-items: center; justify-content: space-between; padding: 4px 0 2px; border-bottom: 1px solid var(--line); gap: 8px; }
-  .mp-lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .3px; color: var(--ink-faint); text-transform: uppercase; flex: 1; }
-  .group-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-  .group-kg { font-family: var(--mono); font-size: 11px; color: var(--ink-soft); }
-  .btn-xs { height: 26px; padding: 0 9px; font-size: 11.5px; border-radius: 5px; }
-  .tray-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); }
-  .tray-item.on { border-color: var(--amber); background: var(--amber-soft); }
-  .tray-item .nm { flex: 1; min-width: 0; cursor: pointer; }
-  .tray-item .nm b { font-weight: 500; font-size: 13px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tray-item .nm .sku  { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); background: var(--panel-2); border-radius: 3px; padding: 1px 5px; display: inline-block; margin: 2px 0; letter-spacing: .2px; }
-  .tray-item .nm small { color: var(--ink-soft); font-family: var(--mono); font-size: 10.5px; }
-  .tray-item .rm { color: var(--ink-faint); font-size: 16px; padding: 2px 4px; border-radius: 4px; background: none; border: 0; cursor: pointer; flex-shrink: 0; }
-  .tray-item .rm:hover { color: var(--danger); }
+  /* ── Header ───────────────────────────────────────────────────────────── */
+  .bar {
+    flex-shrink: 0;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    background: var(--ink);
+    color: #fff;
+    border-bottom: 1px solid rgba(255,255,255,.07);
+  }
+  .brand { display: flex; align-items: baseline; gap: 9px; }
+  .brand b    { font-family: var(--disp); font-weight: 600; font-size: 18px; letter-spacing: .3px; }
+  .brand span { font-family: var(--mono); font-size: 11px; color: #7a92a8; }
 
-  @media (max-width: 980px) { .app { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr; } }
-  @media (max-width: 720px) { .editor { grid-template-columns: 1fr; } }
+  /* ── Sidebar ──────────────────────────────────────────────────────────── */
+  .nav {
+    flex-shrink: 0;
+    width: 196px;
+    transition: width 220ms cubic-bezier(.4, 0, .2, 1);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+  }
+  .nav.collapsed { width: 52px; }
+
+  /* Toggle button */
+  .nav-toggle {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 40px;
+    padding: 0 14px;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+    color: var(--ink-soft);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    width: 100%;
+    text-align: left;
+    transition: background .1s, color .1s;
+  }
+  .nav-toggle:hover { background: var(--panel-2); color: var(--ink); }
+  .nav-toggle.collapsed { justify-content: center; padding: 0; }
+
+  /* Scrollable middle section */
+  .nav-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 6px 0; }
+
+  /* Section groups */
+  .nav-group { padding: 4px 0; }
+
+  .group-label {
+    padding: 8px 14px 4px;
+    font-family: var(--mono);
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--ink-faint);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .group-divider {
+    height: 1px;
+    background: var(--line);
+    margin: 4px 10px;
+  }
+
+  /* Nav items */
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    height: 36px;
+    padding: 0 12px 0 14px;
+    color: var(--ink-soft);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    border-left: 2px solid transparent;
+    transition: background .1s, color .1s, border-color .1s;
+    position: relative;
+  }
+  .nav-item:hover { background: var(--panel-2); color: var(--ink); }
+  .nav-item.active {
+    border-left-color: var(--amber);
+    background: var(--amber-soft);
+    color: var(--amber-deep);
+  }
+  .nav-item.active .nav-icon { stroke: var(--amber-deep); }
+
+  .nav-icon { flex-shrink: 0; opacity: .75; transition: opacity .1s; }
+  .nav-item:hover .nav-icon  { opacity: 1; }
+  .nav-item.active .nav-icon { opacity: 1; }
+
+  .nav-label { overflow: hidden; text-overflow: ellipsis; }
+
+  /* Collapsed: center icons */
+  .nav.collapsed .nav-item { padding: 0; justify-content: center; border-left: none; border-right: 2px solid transparent; }
+  .nav.collapsed .nav-item.active { border-right-color: var(--amber); }
+
+  /* Bottom section */
+  .nav-foot { flex-shrink: 0; padding: 4px 0 8px; }
+
+  /* ── Content area ─────────────────────────────────────────────────────── */
+  .content { flex: 1; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
 </style>

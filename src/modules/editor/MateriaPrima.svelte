@@ -1,6 +1,6 @@
 <script>
-  import { editor, catalogMaterials, catalogRevests, catalogGauges } from '../lib/stores.js';
-  import Tooltip from './Tooltip.svelte';
+  import { editor, catalogMaterials, catalogRevests, catalogGauges } from '../../lib/stores.js';
+  import Tooltip from '../../components/Tooltip.svelte';
 
   let tFree = false;
   $: P = $editor.params;
@@ -8,8 +8,9 @@
   function setMat(e) {
     const m = $catalogMaterials.find((x) => x.name === e.target.value);
     if (!m) return;
-    P.matName = m.name; P.dens = m.dens; $editor = $editor;
+    P.matName = m.name; P.dens = m.dens; P.precoKg = 0; $editor = $editor;
   }
+  function setRevest(e) { P.revest = e.target.value; P.precoKg = 0; $editor = $editor; }
   function setGauge(e) {
     if (e.target.value === 'outra') { tFree = true; return; }
     tFree = false; P.t = parseFloat(e.target.value); $editor = $editor;
@@ -28,7 +29,7 @@
         <select on:change={setMat} value={P.matName}>{#each $catalogMaterials as m}<option value={m.name}>{m.name}</option>{/each}</select>
       </div>
       <div class="field"><label>Revestimento <Tooltip text="Camada de proteção (ex.: Z275 = 275 g/m² de zinco). Entra na descrição do produto." /></label>
-        <select value={P.revest} on:change={str('revest')}>{#each $catalogRevests as r}<option>{r}</option>{/each}</select>
+        <select value={P.revest} on:change={setRevest}>{#each $catalogRevests as r}<option>{r}</option>{/each}</select>
       </div>
       <div class="field"><label>Espessura / bitola <span class="u">mm</span><Tooltip text="Espessura nominal da chapa. Multiplica direto no peso." /></label>
         <select on:change={setGauge} value={$catalogGauges.includes(P.t) ? P.t : 'outra'}>

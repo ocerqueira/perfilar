@@ -1,6 +1,6 @@
 <script>
-  import { dimensionedSVG } from '../lib/draw.js';
-  import { nf } from '../lib/engine.js';
+  import { dimensionedSVG } from '../../lib/draw.js';
+  import { nf } from '../../lib/engine.js';
 
   export let rows;
   export let h0;

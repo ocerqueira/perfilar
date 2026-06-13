@@ -14,7 +14,7 @@ export function freshEditor(key = 'calha') {
   return {
     mode: 'cat', key, conv: 'ext', bd: 'auto', h0: p.h0,
     rows: clone(p.rows),
-    params: { matName: 'Galvanizado', dens: 7850, revest: 'Z275', t: 0.65, forma: 'bobina', coil: 1200, chapaL: 1200, chapaC: 3000, cobrarSobra: false, C: 3000, Q: 10, R: 2, K: 0.44, manBD: 1.7, mg: 35, refilo: 0, espac: 0 },
+    params: { matName: 'Galvanizado', dens: 7850, revest: 'Z275', t: 0.65, forma: 'bobina', coil: 1200, chapaL: 1200, chapaC: 3000, cobrarSobra: false, C: 3000, Q: 10, R: 2, K: 0.44, manBD: 1.7, mg: 35, precoKg: 0, precoPc: 0, priceMode: 'kg', refilo: 0, espac: 0 },
   };
 }
 
@@ -71,6 +71,16 @@ function _loadDescCfg() {
 }
 export const descConfig = writable(_loadDescCfg());
 descConfig.subscribe(v => { try { localStorage.setItem(_DESC_CFG_KEY, JSON.stringify(v)); } catch {} });
+
+// Preferências de exibição do editor
+const _ED_DISP_KEY = 'perf_editorDisplay';
+const _ED_DISP_DEF = { showCommission: false };
+function _loadEditorDisplay() {
+  try { const v = JSON.parse(localStorage.getItem(_ED_DISP_KEY)); return v ? { ..._ED_DISP_DEF, ...v } : { ..._ED_DISP_DEF }; }
+  catch { return { ..._ED_DISP_DEF }; }
+}
+export const editorDisplay = writable(_loadEditorDisplay());
+editorDisplay.subscribe(v => { try { localStorage.setItem(_ED_DISP_KEY, JSON.stringify(v)); } catch {} });
 
 // Catálogo configurável
 export const catalogMaterials = writable(loadMaterials());

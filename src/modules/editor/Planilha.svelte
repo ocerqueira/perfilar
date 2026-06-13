@@ -1,5 +1,5 @@
 <script>
-  import { editor } from '../lib/stores.js';
+  import { editor } from '../../lib/stores.js';
 
   let rows, mode;
   $: rows = $editor.rows;

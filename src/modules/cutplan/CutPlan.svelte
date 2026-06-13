@@ -1,8 +1,8 @@
 <script>
   import { createEventDispatcher } from 'svelte';
-  import { packSheets, PALETTE } from '../lib/cutplan.js';
-  import { nf } from '../lib/engine.js';
-  import { companyInfo, printConfig } from '../lib/stores.js';
+  import { packSheets, PALETTE } from '../../lib/cutplan.js';
+  import { nf } from '../../lib/engine.js';
+  import { companyInfo, printConfig } from '../../lib/stores.js';
 
   export let group;  // { label, entries: [{it, i}], totKg }
   export let ctx;    // { cliente, orc }
