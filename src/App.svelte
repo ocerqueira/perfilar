@@ -4,7 +4,7 @@
 
   function getRoute() {
     const hash = window.location.hash.replace(/^#\/?/, '');
-    return hash || 'editor';
+    return hash || 'dashboard';
   }
 
   let routePath = getRoute();
@@ -17,6 +17,8 @@
 
   // SVG inner paths — 20×20 viewport, stroke, no fill
   const ICONS = {
+    dashboard: `<rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/>`,
+    analises:  `<path d="M3 14h2.5V8H3v6zM8.75 14h2.5V4h-2.5v10zM14.5 14H17V10h-2.5v4z"/>`,
     editor:    `<path d="M5 16.5 12.5 9l2 2L7 18.5H5v-2z"/><path d="M12.5 9l.5-.5a1.5 1.5 0 0 1 2.1 2.1l-.6.4"/><path d="M4 18h12"/>`,
     cutplan:   `<circle cx="5" cy="5" r="2.5"/><circle cx="5" cy="15" r="2.5"/><path d="M8.5 6.5 17 3m-5.5 9 5.5 5M8.5 13.5 12 10"/>`,
     orders:    `<rect x="5" y="2" width="10" height="16" rx="1.5"/><path d="M8.5 7h3M8.5 10h3M8.5 13h2"/>`,
@@ -25,6 +27,8 @@
     products:  `<path d="M10 2 18 6.5v7L10 18 2 13.5v-7L10 2z"/><path d="M2 6.5 10 11l8-4.5M10 11v7"/>`,
     materials: `<path d="M2 14 10 18l8-4M2 10l8 4 8-4M2 6l8 4 8-4"/>`,
     settings:  `<circle cx="10" cy="10" r="2.5"/><path d="M10 2v2.5M10 15.5V18M2 10h2.5M15.5 10H18M4.3 4.3l1.8 1.8M13.9 13.9l1.8 1.8M4.3 15.7l1.8-1.8M13.9 6.1l1.8-1.8"/>`,
+    goals:     `<path d="M4 3h12v7a6 6 0 0 1-12 0V3z"/><path d="M4 6H2a2 2 0 0 0 0 4h2"/><path d="M16 6h2a2 2 0 0 0 0 4h-2"/><path d="M10 16v3"/><path d="M7 19h6"/>`,
+    admin:     `<path d="M10 2 3 5.5v5c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9v-5L10 2z"/><circle cx="10" cy="10" r="2.5"/>`,
   };
 </script>
 

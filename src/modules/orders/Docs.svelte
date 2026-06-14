@@ -1,5 +1,5 @@
 <script>
-  import { order, ctx, regions, regionId, commissionRule } from '../../lib/stores.js';
+  import { order, ctx, regions, regionId, commissionRule, companyInfo } from '../../lib/stores.js';
   import { nf, brl } from '../../lib/engine.js';
   import { priceFor } from '../../lib/pricing.js';
   import { commissionForItem, commissionForOrder, ruleLabel } from '../../lib/commission.js';
@@ -70,7 +70,14 @@
       {#each items as it, i}
         <div class="paper">
           <div class="ph">
-            <div><div class="logo">Perfilar</div><div class="tag">ferro &amp; aço · perfilação</div></div>
+            <div>
+            {#if $companyInfo.logo}
+              <img class="co-logo" src={$companyInfo.logo} alt="logo" />
+            {:else}
+              <div class="logo">{$companyInfo.nome || 'Perfilar'}</div>
+              <div class="tag">ferro &amp; aço · perfilação</div>
+            {/if}
+          </div>
             <div class="pr">
               <b>Ordem de produção · OP-{i + 1}/{items.length}</b><br>
               Cliente: {$ctx.cliente || '—'} · Orç.: {$ctx.orc || '—'} · {dt}
@@ -85,7 +92,14 @@
     {#if kind === 'op' && opMode === 'single'}
       <div class="paper">
         <div class="ph">
-          <div><div class="logo">Perfilar</div><div class="tag">ferro &amp; aço · perfilação</div></div>
+          <div>
+            {#if $companyInfo.logo}
+              <img class="co-logo" src={$companyInfo.logo} alt="logo" />
+            {:else}
+              <div class="logo">{$companyInfo.nome || 'Perfilar'}</div>
+              <div class="tag">ferro &amp; aço · perfilação</div>
+            {/if}
+          </div>
           <div class="pr"><b>Ordem de produção</b><br>Cliente: {$ctx.cliente || '—'} · Orç.: {$ctx.orc || '—'} · {dt}</div>
         </div>
         <div class="muted">{items.length} itens · {items.reduce((a, it) => a + it.params.Q, 0)} peças · {nf(orcTotW, 1)} kg</div>
@@ -102,7 +116,14 @@
     {#if kind === 'orc'}
       <div class="paper">
         <div class="ph">
-          <div><div class="logo">Perfilar</div><div class="tag">ferro &amp; aço · perfilação</div></div>
+          <div>
+            {#if $companyInfo.logo}
+              <img class="co-logo" src={$companyInfo.logo} alt="logo" />
+            {:else}
+              <div class="logo">{$companyInfo.nome || 'Perfilar'}</div>
+              <div class="tag">ferro &amp; aço · perfilação</div>
+            {/if}
+          </div>
           <div class="pr"><b>Orçamento</b><br>Cliente: {$ctx.cliente || '—'} · Orç.: {$ctx.orc || '—'} · {dt}<br>Região: {$regions.find((r) => r.id === $regionId)?.nome}</div>
         </div>
 
@@ -226,6 +247,7 @@
   .ph { display: flex; justify-content: space-between; border-bottom: 1.5px solid #16202B; padding-bottom: 10px; margin-bottom: 14px; }
   .logo { font-family: var(--disp); font-weight: 600; font-size: 17px; }
   .tag  { font-size: 11px; color: var(--ink-soft); }
+  .co-logo { max-height: 44px; max-width: 180px; object-fit: contain; display: block; }
   .pr   { text-align: right; font-size: 12px; }
   .muted { font-size: 12px; color: var(--ink-soft); margin-bottom: 10px; }
   .itemhead { background: var(--panel-2); border-radius: 6px; padding: 7px 11px; font-weight: 600; font-size: 13px; margin-bottom: 10px; display: flex; justify-content: space-between; }

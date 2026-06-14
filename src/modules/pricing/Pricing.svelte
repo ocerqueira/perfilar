@@ -132,9 +132,10 @@
   .rname    { height: 32px; border: 1px solid var(--line); border-radius: 6px; padding: 0 8px; font-size: 13px; width: 200px; }
   .rname:focus { outline: none; border-color: var(--amber); }
 
-  .tabs { display: flex; align-items: center; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 0; }
-  .tab  { height: 34px; padding: 0 16px; border-radius: 7px 7px 0 0; font-size: 13px; font-weight: 500; background: none; border: 1px solid transparent; border-bottom: none; cursor: pointer; color: var(--ink-soft); }
-  .tab.on  { background: var(--panel); border-color: var(--line); color: var(--ink); position: relative; top: 1px; }
+  .tabs { display: flex; align-items: center; gap: 2px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .tab  { height: 30px; padding: 0 12px; border-radius: 6px; font-size: 12.5px; font-weight: 500; background: none; border: 1px solid transparent; cursor: pointer; color: var(--ink-soft); }
+  .tab.on  { background: var(--panel-2); border-color: var(--line); color: var(--ink); }
+  .tab:hover:not(.on) { background: var(--panel-2); }
   .tab-note { font-size: 11.5px; color: var(--ink-faint); margin-left: 10px; }
 
   .scroll { overflow: auto; flex: 1; }

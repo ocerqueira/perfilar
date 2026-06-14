@@ -46,67 +46,71 @@
 
     <!-- ── Materiais ─────────────────────────────────────────────────────── -->
     {#if tab === 'mat'}
-      <div class="sec-label">Materiais (liga do aço)</div>
-      <table class="tbl">
-        <thead>
-          <tr>
-            <th>Nome</th>
-            <th class="r">Densidade <span class="u">kg/m³</span></th>
-            <th>Sigla <span class="u">desc.</span></th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each mats as m, i}
+      <div class="card">
+        <div class="sec-label">Materiais (liga do aço)</div>
+        <table class="tbl">
+          <thead>
             <tr>
-              <td><input class="inp" bind:value={m.name} /></td>
-              <td><input class="inp num" type="number" step="10" bind:value={m.dens} /></td>
-              <td><input class="inp abbr" bind:value={m.abbrev} placeholder="GAL…" maxlength="5" /></td>
-              <td><button class="rm" on:click={() => removeMat(i)} title="Remover">×</button></td>
+              <th>Nome</th>
+              <th class="r">Densidade <span class="u">kg/m³</span></th>
+              <th>Sigla <span class="u">desc.</span></th>
+              <th></th>
             </tr>
+          </thead>
+          <tbody>
+            {#each mats as m, i}
+              <tr>
+                <td><input class="inp" bind:value={m.name} /></td>
+                <td><input class="inp num" type="number" step="10" bind:value={m.dens} /></td>
+                <td><input class="inp abbr" bind:value={m.abbrev} placeholder="GAL…" maxlength="5" /></td>
+                <td><button class="rm" on:click={() => removeMat(i)} title="Remover">×</button></td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+        <button class="btn line sm" on:click={addMat}>+ Material</button>
+
+        <div class="sec-label">Revestimentos</div>
+        <div class="tags">
+          {#each revs as r, i}
+            <span class="tag">{r}<button class="tag-rm" on:click={() => removeRev(i)}>×</button></span>
           {/each}
-        </tbody>
-      </table>
-      <button class="btn line sm mt8" on:click={addMat}>+ Material</button>
-
-      <div class="sec-label mt20">Revestimentos</div>
-      <div class="tags">
-        {#each revs as r, i}
-          <span class="tag">{r}<button class="tag-rm" on:click={() => removeRev(i)}>×</button></span>
-        {/each}
-        <div class="tag-add">
-          <input class="inp tag-in" placeholder="Novo revestimento…" bind:value={newRevInput}
-            on:keydown={(e) => e.key === 'Enter' && addRev()} />
-          <button class="btn line sm" on:click={addRev}>+</button>
+          <div class="tag-add">
+            <input class="inp tag-in" placeholder="Novo revestimento…" bind:value={newRevInput}
+              on:keydown={(e) => e.key === 'Enter' && addRev()} />
+            <button class="btn line sm" on:click={addRev}>+</button>
+          </div>
         </div>
-      </div>
 
-      <div class="footer">
-        <button class="btn line" on:click={resetMat}>Restaurar padrão</button>
-        <div style="flex:1"></div>
-        <button class="btn amber" on:click={saveMat}>Salvar</button>
+        <div class="footer">
+          <button class="btn line" on:click={resetMat}>Restaurar padrão</button>
+          <div style="flex:1"></div>
+          <button class="btn amber" on:click={saveMat}>Salvar</button>
+        </div>
       </div>
 
     <!-- ── Bitolas ────────────────────────────────────────────────────────── -->
     {:else if tab === 'gau'}
-      <div class="sec-label">Bitolas padrão <span class="u">mm</span></div>
-      <div class="tags">
-        {#each gauges as g, i}
-          <span class="tag">{g.toFixed(2)}<button class="tag-rm" on:click={() => removeGauge(i)}>×</button></span>
-        {/each}
-        <div class="tag-add">
-          <input class="inp tag-in" type="number" step="0.05" min="0" placeholder="mm…"
-            bind:value={newGauVal}
-            on:keydown={(e) => e.key === 'Enter' && addGauge()} />
-          <button class="btn line sm" on:click={addGauge}>+</button>
+      <div class="card">
+        <div class="sec-label">Bitolas padrão <span class="u">mm</span></div>
+        <div class="tags">
+          {#each gauges as g, i}
+            <span class="tag">{g.toFixed(2)}<button class="tag-rm" on:click={() => removeGauge(i)}>×</button></span>
+          {/each}
+          <div class="tag-add">
+            <input class="inp tag-in" type="number" step="0.05" min="0" placeholder="mm…"
+              bind:value={newGauVal}
+              on:keydown={(e) => e.key === 'Enter' && addGauge()} />
+            <button class="btn line sm" on:click={addGauge}>+</button>
+          </div>
         </div>
-      </div>
-      <p class="hint mt8">Bitolas fora desta lista ficam disponíveis pelo campo "Outra…" na aba de Matéria-prima no Editor.</p>
+        <p class="hint">Bitolas fora desta lista ficam disponíveis pelo campo "Outra…" na aba de Matéria-prima no Editor.</p>
 
-      <div class="footer">
-        <button class="btn line" on:click={resetGau}>Restaurar padrão</button>
-        <div style="flex:1"></div>
-        <button class="btn amber" on:click={saveGau}>Salvar</button>
+        <div class="footer">
+          <button class="btn line" on:click={resetGau}>Restaurar padrão</button>
+          <div style="flex:1"></div>
+          <button class="btn amber" on:click={saveGau}>Salvar</button>
+        </div>
       </div>
     {/if}
 
@@ -123,12 +127,11 @@
   .tab.on { background: var(--panel-2); border-color: var(--line); color: var(--ink); }
   .tab:hover:not(.on) { background: var(--panel-2); }
 
-  .body { flex: 1; overflow-y: auto; padding: 24px; max-width: 720px; display: flex; flex-direction: column; }
+  .body { flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 20px; display: flex; flex-direction: column; gap: 12px; }
 
-  .sec-label { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .8px; color: var(--ink-faint); margin-bottom: 8px; }
-  .mt8  { margin-top: 8px; }
-  .mt20 { margin-top: 20px; }
-  .hint { font-size: 12px; color: var(--ink-faint); margin-top: 6px; line-height: 1.5; }
+  .sec-label { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .8px; color: var(--ink-faint); }
+  .hint { font-size: 12px; color: var(--ink-faint); line-height: 1.5; }
 
   /* Tables */
   .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -159,5 +162,5 @@
   .rm { background: none; border: 0; color: var(--ink-faint); cursor: pointer; font-size: 15px; padding: 2px 5px; }
   .rm:hover { color: var(--danger); }
 
-  .footer { display: flex; gap: 10px; padding-top: 20px; margin-top: auto; border-top: 1px solid var(--line); align-items: center; flex-shrink: 0; }
+  .footer { display: flex; gap: 10px; padding-top: 16px; border-top: 1px solid var(--line); align-items: center; flex-shrink: 0; }
 </style>

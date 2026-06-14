@@ -137,6 +137,9 @@
   <div class="doc-header">
     <!-- Coluna esquerda: empresa -->
     <div class="dh-company">
+      {#if $companyInfo.logo}
+        <img class="dh-logo" src={$companyInfo.logo} alt="logo" />
+      {/if}
       <div class="dh-co-name">{$companyInfo.nome || 'Perfilar'}</div>
       {#if $companyInfo.cnpj}    <div class="dh-co-row">CNPJ {$companyInfo.cnpj}</div>{/if}
       {#if $companyInfo.endereco}<div class="dh-co-row">{$companyInfo.endereco}</div>{/if}
@@ -447,6 +450,7 @@
 
   /* Empresa (coluna esquerda) */
   .dh-company { padding: 14px 18px; }
+  .dh-logo { max-height: 44px; max-width: 180px; object-fit: contain; display: block; margin-bottom: 6px; }
   .dh-co-name { font-family: var(--disp); font-weight: 700; font-size: 16px; letter-spacing: .2px; margin-bottom: 4px; }
   .dh-co-row  { font-size: 11px; color: #9fb0c2; margin-top: 2px; }
   .dh-co-contacts { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 5px; }

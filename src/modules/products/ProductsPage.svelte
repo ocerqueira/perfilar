@@ -266,10 +266,10 @@
   .page-title { font-size: 16px; font-weight: 600; }
 
   /* Split layout: list | editor */
-  .split { display: grid; grid-template-columns: 210px 1fr; flex: 1; overflow: hidden; }
+  .split { display: grid; grid-template-columns: 210px 1fr; flex: 1; overflow: hidden; min-height: 0; }
 
   /* Preset list */
-  .cat-list { border-right: 1px solid var(--line); overflow-y: auto; padding: 12px 10px; display: flex; flex-direction: column; gap: 10px; }
+  .cat-list { border-right: 1px solid var(--line); overflow-y: auto; padding: 12px 10px; display: flex; flex-direction: column; gap: 10px; background: var(--panel-2); }
   .cl-section { display: flex; flex-direction: column; gap: 2px; }
   .eyebrow { font-family: var(--mono); font-size: 9.5px; letter-spacing: 1px; text-transform: uppercase; color: var(--ink-faint); padding: 4px 6px 2px; }
   .cl-item { display: flex; align-items: center; justify-content: space-between; padding: 7px 10px; border-radius: 6px; background: none; border: 1px solid transparent; cursor: pointer; font-size: 13px; text-align: left; }
@@ -282,7 +282,7 @@
   .cl-new { margin-top: 4px; }
 
   /* Editor */
-  .cat-editor { overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .cat-editor { overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; background: var(--panel); }
   .empty-state { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--ink-faint); font-size: 13px; font-style: italic; }
 
   .ed-row { display: flex; gap: 12px; flex-wrap: wrap; }

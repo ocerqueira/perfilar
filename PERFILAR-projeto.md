@@ -199,11 +199,14 @@ Layout fixo em todas as páginas. O conteúdo muda, a shell não.
 | `/#/editor` | Editor | Planilha + blueprint + matéria-prima + resultados (tela principal atual) |
 | `/#/orders` | Pedidos | Lista de orçamentos/OPs; criar novo abre o editor vinculado |
 | `/#/clients` | Clientes | Cadastro de clientes (razão social, CNPJ, IE, UF, região) |
+| `/#/goals` | Metas | Metas mensais gerais + por vendedor + campanhas de vendas |
+| `/#/prospeccao` | Prospecção | Busca de empresas (Receita), enriquecimento de leads, rota de visita otimizada |
 | `/#/products` | Produtos | Catálogo de perfis (presets padrão + custom + restrições) |
 | `/#/materials` | Matérias-primas | Materiais, revestimentos, bitolas, bobinas/chapas em estoque |
 | `/#/pricing` | Preços & Impostos | Tabela de preços por região + TaxConfig por UF |
 | `/#/cutplan` | Plano de Corte | Nesting visual para chapas, impressão |
-| `/#/settings` | Configurações | Empresa, template de descrição, (futuramente: usuários) |
+| `/#/settings` | Configurações | Empresa, descrição, integrações de API (ViaCEP, CNPJ, e-mail, WhatsApp, Maps) |
+| `/#/admin` | Admin | Usuários, perfis e permissões |
 
 ### Shell (App.svelte)
 
@@ -649,20 +652,22 @@ export function toolingRestrictions(punch, die, t) {
 | 2 | Preço dual (custo+venda, própria+concorrente) + comissão composicional | ✅ feito |
 | Config | Catálogo configurável (materiais, bitolas, presets, empresa, descrição) | ✅ feito |
 | CutPlan | Plano de corte visual para chapas (shell-packing, nesting, impressão) | ✅ feito |
-| 3 | SPA modular (sidebar + header + rotas por módulo) | ⬜ próximo |
+| 3 | SPA modular (sidebar + header + rotas por módulo) | ✅ feito |
+| — | Módulos CRM: Clientes, Metas, Campanhas, Admin (usuários + permissões) | ✅ feito |
+| — | Integrações de API: ViaCEP, CNPJ, E-mail, WhatsApp, Google Maps (config UI) | ✅ feito |
 | 4 | Ferramental (Punção + Matriz): CRUD + restrições + sugestão de R | ⬜ próximo |
 | 5 | Impostos de saída (TaxConfig: ICMS × UF, PIS/COFINS, IPI, DIFAL) | ⬜ a fazer |
-| 6 | Clientes (cadastro, CNPJ, IE, UF, contribuinte ICMS) | ⬜ a fazer |
-| 7 | Telha (convencional/sanduíche) e Composto | ⬜ a fazer |
-| 8 | Templates de descrição configuráveis por tipo de produto | ⬜ a fazer |
+| 6 | Telha (convencional/sanduíche) e Composto | ⬜ a fazer |
+| 7 | Templates de descrição configuráveis por tipo de produto | ⬜ a fazer |
+| 8 | **Módulo de Prospecção** — busca Receita + enriquecimento + rota otimizada | ⬜ planejado (ver ADR 002) |
 
 ### Arquitetura (fases)
 
 | Fase | O que muda | Quando |
 |---|---|---|
-| **Fase 1** | Reorganizar frontend em módulos (`src/modules/`) + SPA com sidebar/rotas | Agora |
-| **Fase 2** | Criar `api.js` com fallback localStorage → pronto para backend | Fase 1 concluída |
-| **Fase 3** | Backend Python FastAPI + Docker + PostgreSQL (começa por clients + pricing + orders) | Quando precisar de multi-usuário ou persistência central |
+| **Fase 1** | Reorganizar frontend em módulos (`src/modules/`) + SPA com sidebar/rotas | ✅ concluída |
+| **Fase 2** | Backend Python FastAPI + Docker + PostgreSQL (clients, pricing, orders, admin) | Próxima — multi-usuário |
+| **Fase 3** | Módulo de Prospecção: cron Receita + base Postgres + Routes API + enriquecimento | Requer backend (Fase 2+) |
 | **Fase 4** | Tauri (desktop offline) usando o mesmo frontend | Pós-backend |
 
 ### Extras (fase 2+)
@@ -674,10 +679,57 @@ export function toolingRestrictions(punch, die, t) {
 - Preço por cidade/UF além de região; importação de tabela CSV.
 - Nesting avançado para bobina (múltiplos SKUs na mesma largura).
 - Agrupamento de itens por matéria-prima no pedido.
+- Prospecção Fase 2: múltiplos vendedores com janelas de horário (Route Optimization API).
 
 ---
 
-## 12. Itens em aberto / a validar
+## 12. Integrações de API (configuráveis em Settings → Integrações)
+
+O frontend já tem a UI de configuração e os stores. A chamada real das APIs fica no backend (evita expor chaves e permite cache/proxy).
+
+| API | Provider(s) suportados | Uso no sistema |
+|---|---|---|
+| **ViaCEP** | viacep.com.br | Preenchimento de endereço por CEP em Clientes, Admin, Config |
+| **CNPJ / Receita** | BrasilAPI, ReceitaWS, CNPJ.ws, custom | Preenchimento de dados da empresa por CNPJ |
+| **E-mail transacional** | SMTP (senha/OAuth2), SendGrid, Mailgun, Resend, custom | Envio de orçamentos, pedidos e notificações |
+| **WhatsApp** | Evolution API, Z-API, WPPConnect, Twilio, Meta Cloud API, custom | Envio de orçamentos e atualizações de pedido |
+| **Google Maps / Routes** | Geocoding API, Routes API, Directions API, Distance Matrix API | Módulo de Prospecção — geocoding de endereços e rota otimizada |
+
+Store: `apiConfig` em `src/lib/stores.js` (key `perf_api_config`). Cada integração tem flag `ativa`, provider e credenciais. O backend lê essas configurações por tenant e usa nos jobs/endpoints correspondentes.
+
+---
+
+## 13. Módulo de Prospecção
+
+> Arquitetura detalhada em [`adrs/002-modulo-prospeccao.md`](adrs/002-modulo-prospeccao.md).
+
+### Visão resumida
+
+4 camadas independentes — cada uma substituível sem refazer as outras:
+
+1. **Base local (Postgres + Receita Federal):** cron mensal que baixa o dump público da Receita e faz upsert. Guarda CNPJ, razão social, CNAE, endereço completo, porte, situação. É o motor de filtro — sem custo de API por busca.
+
+2. **API de busca interna** (`GET /prospeccao/buscar`): filtros por CNAE (com autocomplete), UF/município/bairro/raio, porte, situação, data de abertura, texto livre. Retorna lista paginada com endereço.
+
+3. **Enriquecimento sob demanda:** só chama API externa (Speedio, Econodata, CNPJ.ws) quando o usuário seleciona leads para trabalhar. Resultado fica cacheado no Postgres com `enriched_at` — evita re-cobrar o mesmo CNPJ dentro da janela de validade.
+
+4. **Geolocalização + Rota (Google Maps):**
+   - Geocoding: endereço Receita → lat/lng, salvo no banco, nunca recalculado sem mudança de endereço
+   - Routes API com `optimizeWaypointOrder: true` → sequência otimizada de visitas + tempo + distância por parada + link "abrir no celular"
+
+### Integrações com módulos existentes
+
+- **Clientes:** botão "Importar do prospect" → preenche ClientForm com dados do CNPJ
+- **Metas:** conversão prospect → cliente alimenta indicador de Positivação no GoalsPage
+- **Histórico:** campo `status_prospeccao` (prospectado / agendado / convertido / descartado) evita abordar a mesma empresa duas vezes
+
+### Pré-requisito
+
+Requer **backend (Fase 2)** — cron de atualização Receita e chamadas de enriquecimento não rodam no frontend puro.
+
+---
+
+## 14. Itens em aberto / a validar
 
 - **Impostos "por dentro":** mudar pricing.js de markup simples para fórmula com carga tributária vai subir o PV sugerido — alinhar com usuário antes de implantar.
 - **IPI:** perfil de aço formado a frio (NCM 7216.x) → IPI 0%. Confirmar se a operação trabalha com NCMs que tenham IPI > 0 antes de simplificar o campo.

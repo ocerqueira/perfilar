@@ -16,9 +16,13 @@
 
   <div class="body">
     {#if tab === 'pricing'}
-      <Pricing />
+      <div class="card card-pricing">
+        <Pricing />
+      </div>
     {:else}
-      <Commission />
+      <div class="card card-commission">
+        <Commission />
+      </div>
     {/if}
   </div>
 </div>
@@ -33,5 +37,13 @@
   .tab.on { background: var(--panel-2); border-color: var(--line); color: var(--ink); }
   .tab:hover:not(.on) { background: var(--panel-2); }
 
-  .body { flex: 1; overflow-y: auto; padding: 0 24px 24px; display: flex; flex-direction: column; min-height: 0; }
+  .body { flex: 1; overflow: hidden; padding: 20px 24px; display: flex; flex-direction: column; }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
+
+  /* Pricing: flex column so the inner table scroll fills remaining height */
+  .card-pricing { flex: 1; overflow: hidden; display: flex; flex-direction: column; padding: 0 20px; }
+
+  /* Commission: simple scrollable container */
+  .card-commission { overflow-y: auto; padding: 20px; }
 </style>
